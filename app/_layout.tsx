@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 
 import "react-native-reanimated";
 
+import { AuthProvider } from "@/components/Auth/AuthProvider";
 import SplashScreen from "@/components/SplashScreen";
 import { ToastContainer } from "@/components/Toast/ToastContainer";
+import { TabBarHeightProvider } from "@/context/TabBarHeightContext";
 
 // منع إخفاء splash screen تلقائياً
 SplashScreenExpo.preventAutoHideAsync();
@@ -69,13 +71,24 @@ export default function RootLayout() {
 
   // التطبيق الرئيسي
   return (
-    <>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-      </Stack>
-      <ToastContainer />
-    </>
+    <AuthProvider>
+      <TabBarHeightProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="otp-modal"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              gestureEnabled: true,
+              animationDuration: 300,
+            }}
+          />
+        </Stack>
+        <ToastContainer />
+      </TabBarHeightProvider>
+    </AuthProvider>
   );
 }

@@ -54,10 +54,10 @@ const SignInHeader = () => {
     backButton: {
       position: "absolute",
       top: Platform.OS === "ios" ? 56 : 40,
-      ...(isRTL ? { left: 32 } : { right: 32 }),
+      ...(isRTL ? { left: 22 } : { right: 22 }),
       zIndex: 50,
-      backgroundColor: "rgba(0, 0, 0, 0.1)",
-      borderRadius: 20,
+      backgroundColor: "rgba(52, 52, 52, 0.1)",
+      borderRadius: 820,
       padding: 8,
     },
     backIcon: {

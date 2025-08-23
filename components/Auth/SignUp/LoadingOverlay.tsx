@@ -6,7 +6,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { translationsignUp } from "@/constants/Lang/AuthLangs";
 
 // Hooks
-import { useSignUpContext } from "@/hooks/SignupHooks/useSignUpContext";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -19,7 +18,6 @@ const LoadingOverlay = () => {
   const { colors } = useTheme();
   const fonts = useFontFamily();
   const { currentLanguage: language } = useLanguageStore();
-  const { loading } = useSignUpContext();
 
   const t = translationsignUp[language as Language];
 
@@ -41,8 +39,6 @@ const LoadingOverlay = () => {
       fontFamily: fonts.Regular || "System",
     },
   });
-
-  if (!loading) return null;
 
   return (
     <View style={styles.loadingOverlay}>

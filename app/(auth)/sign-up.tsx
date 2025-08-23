@@ -1,6 +1,5 @@
 import SignUpForm from "@/components/Auth/SignUp/SignUpForm";
 import SignUpHeader from "@/components/Auth/SignUp/SignUpHeader";
-import SignUpModals from "@/components/Auth/SignUp/SignUpModals";
 import {
   SignUpProvider,
   useSignUpContext,
@@ -14,7 +13,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   TouchableWithoutFeedback,
   View,
 } from "react-native";
@@ -28,7 +26,7 @@ const { height: screenHeight } = Dimensions.get("window");
 
 const SignUpScreenContent = () => {
   const { colors } = useTheme();
-  const { scrollViewRef, isKeyboardVisible, keyboardHeight, loading } =
+  const { scrollViewRef, isKeyboardVisible, keyboardHeight } =
     useSignUpContext();
 
   const styles = StyleSheet.create({
@@ -82,9 +80,6 @@ const SignUpScreenContent = () => {
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
-
-      {/* Modals - Outside ScrollView for better performance */}
-      <SignUpModals />
     </KeyboardAvoidingView>
   );
 };
@@ -103,7 +98,7 @@ export const SignUpScreenEnhanced = () => {
 
 const SignUpScreenContentWithLoading = () => {
   const { colors } = useTheme();
-  const { scrollViewRef, isKeyboardVisible, keyboardHeight, loading } =
+  const { scrollViewRef, isKeyboardVisible, keyboardHeight } =
     useSignUpContext();
 
   const styles = StyleSheet.create({
@@ -170,23 +165,10 @@ const SignUpScreenContentWithLoading = () => {
 
               {/* Form Section */}
               <SignUpForm />
-
-              {/* Loading Overlay */}
-              {loading && (
-                <View style={styles.loadingOverlay}>
-                  <View style={styles.loadingContainer}>
-                    {/* يمكنك إضافة spinner هنا */}
-                    <Text style={{ color: colors.text }}>Loading...</Text>
-                  </View>
-                </View>
-              )}
             </View>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
-
-      {/* Modals */}
-      <SignUpModals />
     </KeyboardAvoidingView>
   );
 };

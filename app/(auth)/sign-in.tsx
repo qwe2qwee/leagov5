@@ -1,6 +1,5 @@
 import SignInForm from "@/components/Auth/SignIn/SignInForm";
 import SignInHeader from "@/components/Auth/SignIn/SignInHeader";
-import SignInModals from "@/components/Auth/SignIn/SignInModals";
 // استيراد الفورم المنفصل
 import {
   SignInProvider,
@@ -16,7 +15,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   TouchableWithoutFeedback,
   View,
 } from "react-native";
@@ -33,13 +31,8 @@ const SignInScreenContent = () => {
   const responsive = useResponsive();
   const { isVerySmallScreen, height, getResponsiveValue } = responsive;
 
-  const {
-    scrollViewRef,
-    isKeyboardVisible,
-    keyboardHeight,
-    loading,
-    signInMethod,
-  } = useSignInContext();
+  const { scrollViewRef, isKeyboardVisible, keyboardHeight } =
+    useSignInContext();
 
   const styles = StyleSheet.create({
     keyboardView: {
@@ -51,14 +44,8 @@ const SignInScreenContent = () => {
     },
     scrollContentContainer: {
       flexGrow: 1,
-      paddingBottom: isKeyboardVisible
-        ? keyboardHeight + 20
-        : getResponsiveValue(16, 20, 24, 28, 32),
+
       // Add extra padding for password method since it has more content
-      minHeight:
-        signInMethod === "password"
-          ? screenHeight + (isVerySmallScreen ? 30 : 50)
-          : screenHeight,
     },
     container: {
       flex: 1,
@@ -99,9 +86,6 @@ const SignInScreenContent = () => {
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
-
-      {/* Modals - Outside ScrollView for better performance */}
-      <SignInModals />
     </KeyboardAvoidingView>
   );
 };
@@ -115,13 +99,8 @@ const SignInScreenContentWithLoading = () => {
   const responsive = useResponsive();
   const { isVerySmallScreen, getResponsiveValue } = responsive;
 
-  const {
-    scrollViewRef,
-    isKeyboardVisible,
-    keyboardHeight,
-    loading,
-    signInMethod,
-  } = useSignInContext();
+  const { scrollViewRef, isKeyboardVisible, keyboardHeight } =
+    useSignInContext();
 
   const styles = StyleSheet.create({
     keyboardView: {
@@ -133,13 +112,6 @@ const SignInScreenContentWithLoading = () => {
     },
     scrollContentContainer: {
       flexGrow: 1,
-      paddingBottom: isKeyboardVisible
-        ? keyboardHeight + 20
-        : getResponsiveValue(16, 20, 24, 28, 32),
-      minHeight:
-        signInMethod === "password"
-          ? screenHeight + (isVerySmallScreen ? 30 : 50)
-          : screenHeight,
     },
     container: {
       flex: 1,
@@ -201,26 +173,12 @@ const SignInScreenContentWithLoading = () => {
             <View style={styles.contentWrapper}>
               {/* Header Section */}
               <SignInHeader />
-
               {/* Form Section */}
               <SignInForm />
-
-              {/* Loading Overlay */}
-              {loading && (
-                <View style={styles.loadingOverlay}>
-                  <View style={styles.loadingContainer}>
-                    {/* يمكنك إضافة spinner هنا */}
-                    <Text style={styles.loadingText}>Loading...</Text>
-                  </View>
-                </View>
-              )}
             </View>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
-
-      {/* Modals */}
-      <SignInModals />
     </KeyboardAvoidingView>
   );
 };

@@ -16,10 +16,12 @@ import {
 
 import { icons } from "@/constants";
 import { Colors } from "@/constants/Colors";
+import { useTabBarHeight } from "@/context/TabBarHeightContext";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// مكون زر تاب مع أيقونة صورة
+// زر التاب
 interface CustomTabButtonProps
   extends React.PropsWithChildren,
     TabTriggerSlotProps {
@@ -79,8 +81,11 @@ const CustomTabButton = React.forwardRef<View, CustomTabButtonProps>(
 );
 CustomTabButton.displayName = "CustomTabButton";
 
+// تخطيط التابز
 export default function TabLayout() {
   const { isSmallScreen, isMediumScreen } = useResponsive();
+  const { setHeight } = useTabBarHeight();
+  const insets = useSafeAreaInsets();
 
   const getTabBarHeight = () => {
     if (isSmallScreen) return 70;
@@ -106,8 +111,13 @@ export default function TabLayout() {
             backgroundColor: Colors["dark"].backgroundTertiary,
             height: getTabBarHeight(),
             marginHorizontal: getHorizontalMargin(),
+            bottom: insets.bottom + 15, // +30 عشان عامل bottom:30
           },
         ]}
+        onLayout={(event) => {
+          const { height } = event.nativeEvent.layout;
+          setHeight(height * 2); // +30 عشان عامل bottom:30
+        }}
       >
         <TabTrigger name="index" href="/" asChild>
           <CustomTabButton iconSource={icons.home} />
@@ -126,6 +136,7 @@ export default function TabLayout() {
         </TabTrigger>
       </View>
 
+      {/* مخفي */}
       <TabList style={{ display: "none" }}>
         <TabTrigger name="index" href="/" />
         <TabTrigger name="Cars" href="/Cars" />
@@ -146,7 +157,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 30,
   },
   tabButton: {
     alignItems: "center",

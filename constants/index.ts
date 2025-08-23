@@ -20,6 +20,7 @@ export const icons = {
   map: require("../assets/icons/map.png"),
   marker: require("../assets/icons/marker.png"),
   out: require("../assets/icons/out.png"),
+  riyalsymbol: require("../assets/icons/riyalsymbol.png"),
   person: require("../assets/icons/person.png"),
   pin: require("../assets/icons/pin.png"),
   point: require("../assets/icons/point.png"),

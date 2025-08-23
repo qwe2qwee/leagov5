@@ -9,6 +9,8 @@ interface LanguageTranslation {
 interface LoginTranslations {
   loginTitle: string;
   fillData: string;
+  signUp: string;
+  phone: string;
   email: string;
   password: string;
   signIn: string;
@@ -639,8 +641,11 @@ export const translationsLogin: {
     fillData: "Please fill in the data to log in to your account",
     email: "Email",
     password: "Password",
+    phone: "Phone",
     signIn: "Log In",
     forgotPassword: "Forgot Password?",
+    signUp: "Sign Up",
+
     noAccount: "Don't have an account?",
     createAccount: "Create one",
     error: "Error",
@@ -652,7 +657,10 @@ export const translationsLogin: {
     fillData: "عبّي بياناتك عشان تدخل لحسابك",
     email: "الإيميل",
     password: "كلمة السر",
+    signUp: "سجّل",
+
     signIn: "سجّل دخول",
+    phone: "رقم الجوال",
     forgotPassword: "نسيت كلمة السر؟",
     noAccount: "ما عندك حساب؟",
     createAccount: "سوّي حساب",

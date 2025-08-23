@@ -1,29 +1,38 @@
 import InputField from "@/components/Auth/InputField";
-import OAuth from "@/components/Auth/OAuth";
 import CustomButton from "@/components/ui/CustomButton";
 import { icons } from "@/constants";
 import { translationsLogin } from "@/constants/Lang/AuthLangs";
-import {
-  useSignInContext,
-  useSignInMethodConfig,
-} from "@/hooks/SingInHooks/useSignInContext";
+import { useAuth } from "@/hooks/supabaseHooks/auth/context";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
+import { useSignInStore } from "@/store/auth/useSignInStore";
+import useLanguageStore from "@/store/useLanguageStore";
 import { useSafeNavigate } from "@/utils/useSafeNavigate";
-import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Alert,
+  Keyboard,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 const SignInForm = () => {
   const { colors } = useTheme();
   const responsive = useResponsive();
   const {
     isVerySmallScreen,
-    isSmallScreen,
-    isMediumScreen,
-    isLargeScreen,
     height,
-    width,
     getFontSize,
     getSpacing,
     getResponsiveValue,
@@ -31,489 +40,398 @@ const SignInForm = () => {
 
   const fonts = useFontFamily();
   const { push } = useSafeNavigate();
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // استخدام السياق الخاص بتسجيل الدخول
+  // Auth hook (we only use phone flows here)
+  const { signInWithPhone, checkPhoneExists } = useAuth();
+
+  // Form store
   const {
-    signInMethod,
     form,
-    fieldErrors,
-    loading,
-    language,
-    isRTL,
-    isKeyboardVisible,
+    fieldErrors: errors,
+    isSigningIn,
     handleInputChange,
-    handleSignInMethodChange,
-    handleSignInWithOTP,
-    handleSignInWithPassword,
-  } = useSignInContext();
+    validateForm,
+    resetForm,
+    formatPhoneNumber,
+    setIsSigningIn,
+  } = useSignInStore();
 
-  // الحصول على تكوين واجهة المستخدم حسب الطريقة المختارة
-  const {
-    inputLabel,
-    inputPlaceholder,
-    buttonText,
-    keyboardType,
-    maxLength,
-    showPasswordField,
-    texts,
-    isOTPMethod,
-    isPasswordMethod,
-  } = useSignInMethodConfig();
+  // Local keyboard state (not in Zustand)
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const { currentLanguage } = useLanguageStore.getState
+    ? useLanguageStore.getState()
+    : useLanguageStore();
+  // note: the store usage above matches original pattern; if your useLanguageStore signature differs adjust accordingly
 
-  const t = translationsLogin[language];
+  // Keyboard listeners
+  useEffect(() => {
+    const handleKeyboardShow = (event: any) => {
+      setIsKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates?.height || 0);
 
-  // دالة التعامل مع إرسال النموذج
-  const handleSubmit = () => {
-    if (isPasswordMethod) {
-      handleSignInWithPassword();
-    } else {
-      handleSignInWithOTP();
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+
+    const handleKeyboardHide = () => {
+      setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
+    };
+
+    const keyboardShowSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      handleKeyboardShow
+    );
+
+    const keyboardHideSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      handleKeyboardHide
+    );
+
+    return () => {
+      keyboardShowSubscription?.remove();
+      keyboardHideSubscription?.remove();
+    };
+  }, []);
+
+  // Labels (fixed to phone)
+  const getLabels = useMemo(() => {
+    const baseLabels = translationsLogin[currentLanguage || "en"] || {};
+    return {
+      ...baseLabels,
+      inputLabel: "Phone Number",
+      inputPlaceholder: "Enter your phone number",
+      buttonText: "Send OTP",
+      phone: baseLabels.phone || "Phone",
+      loginTitle: baseLabels.loginTitle || "Send OTP",
+      forgotPassword: baseLabels.forgotPassword || "Forgot password?",
+      createAccount: baseLabels.createAccount || "Don't have an account?",
+      signUp: baseLabels.signUp || "Sign up",
+    };
+  }, [currentLanguage]);
+
+  const spacing = useMemo(
+    () => ({
+      horizontal: getResponsiveValue(12, 16, 20, 24, 28),
+      vertical: isKeyboardVisible
+        ? getResponsiveValue(4, 6, 8, 10, 12)
+        : getResponsiveValue(16, 20, 24, 30, 36),
+      bottom: getResponsiveValue(12, 16, 20, 24, 28),
+      input: getResponsiveValue(12, 16, 20, 24, 28),
+      button: getResponsiveValue(12, 16, 20, 24, 28),
+      link: getResponsiveValue(12, 16, 20, 24, 28),
+      methodSwitcher: getResponsiveValue(16, 20, 24, 28, 32),
+      quickSwitch: getResponsiveValue(8, 12, 16, 20, 24),
+    }),
+    [isKeyboardVisible, getResponsiveValue]
+  );
+
+  const fontSize = useMemo(
+    () => ({
+      link: getFontSize(14, 12, 18),
+      quickSwitch: getFontSize(12, 10, 16),
+      forgotPassword: getFontSize(12, 10, 16),
+    }),
+    [getFontSize]
+  );
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        formContainer: {
+          flex: 1,
+          paddingHorizontal: spacing.horizontal,
+          paddingTop: spacing.vertical,
+          paddingBottom: spacing.bottom,
+          minHeight: isKeyboardVisible ? height * 0.6 : height * 0.8,
+        },
+
+        // Input container
+        inputContainer: {
+          width: "100%",
+          marginBottom: spacing.input,
+          flex: isKeyboardVisible ? 1 : 0,
+        },
+
+        // Forgot password
+        forgotPasswordContainer: {
+          width: "100%",
+          paddingHorizontal: getSpacing(4),
+          flexDirection: "row-reverse",
+          justifyContent: "flex-start",
+          alignItems: "center",
+          marginTop: getSpacing(6),
+        },
+
+        forgotPasswordButton: {
+          flexDirection: "row",
+          paddingHorizontal: getSpacing(8),
+          paddingVertical: getSpacing(4),
+          minHeight: getResponsiveValue(28, 32, 36, 40, 44),
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: getSpacing(4),
+        },
+
+        forgotPasswordText: {
+          color: colors.error || "#FF0000",
+          fontSize: fontSize.forgotPassword,
+          textDecorationLine: "underline",
+          fontFamily: fonts.SemiBold || fonts.Bold || "System",
+          textAlign: "left",
+          lineHeight: fontSize.forgotPassword * 1.3,
+        },
+
+        // Sign in button
+        signInButton: {
+          marginTop: spacing.button,
+          marginBottom: isKeyboardVisible ? getSpacing(8) : spacing.button,
+          width: "100%",
+        },
+
+        // Quick switch
+        quickSwitchContainer: {
+          alignItems: "center",
+          marginBottom: spacing.quickSwitch,
+        },
+
+        quickSwitchButton: {
+          paddingHorizontal: getResponsiveValue(12, 16, 20, 24, 28),
+          paddingVertical: getResponsiveValue(6, 8, 10, 12, 14),
+          borderRadius: getResponsiveValue(16, 18, 20, 22, 24),
+          backgroundColor: colors.surface || "#f0f0f0",
+          minHeight: getResponsiveValue(32, 36, 40, 44, 48),
+          alignItems: "center",
+          justifyContent: "center",
+          elevation: 1,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+        },
+
+        quickSwitchText: {
+          fontSize: fontSize.quickSwitch,
+          fontFamily: fonts.Medium || "System",
+          color: colors.primary || "#FF5C39",
+          textAlign: "center",
+          lineHeight: fontSize.quickSwitch * 1.3,
+        },
+
+        // Sign up link
+        linkContainer: {
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
+          marginTop: spacing.link,
+          marginBottom: getResponsiveValue(16, 20, 30, 40, 50),
+          paddingVertical: getSpacing(8),
+          paddingHorizontal: getSpacing(12),
+          minHeight: getResponsiveValue(32, 36, 40, 44, 48),
+          flexWrap: "wrap",
+        },
+
+        linkText: {
+          fontSize: fontSize.link,
+          fontFamily: fonts.Regular || "System",
+          color: colors.text || "#000000",
+          textAlign: "center",
+          lineHeight: fontSize.link * 1.3,
+          flexShrink: 1,
+        },
+
+        linkTextPrimary: {
+          fontSize: fontSize.link,
+          fontFamily: fonts.SemiBold || "System",
+          color: colors.primary || "#FF5C39",
+          lineHeight: fontSize.link * 1.3,
+          flexShrink: 1,
+          marginLeft: getSpacing(6),
+        },
+
+        // Keyboard aware
+        keyboardAwareContainer: {
+          flex: 1,
+          justifyContent: isKeyboardVisible ? "flex-start" : "space-between",
+        },
+
+        hiddenOnKeyboard: {
+          opacity: isKeyboardVisible ? 0 : 1,
+          height: isKeyboardVisible ? 0 : "auto",
+          overflow: "hidden",
+          marginTop: isKeyboardVisible ? 0 : spacing.link,
+        },
+
+        compactMode: {
+          paddingHorizontal: isVerySmallScreen ? 8 : spacing.horizontal,
+          paddingVertical: isVerySmallScreen ? 4 : spacing.vertical,
+        },
+
+        errorText: {
+          fontSize: getFontSize(12, 10, 14),
+          fontFamily: fonts.Regular || "System",
+          color: colors.error || "#FF3333",
+          textAlign: "left",
+          marginTop: getSpacing(4),
+          marginBottom: getSpacing(8),
+        },
+
+        compactMethodSwitcher: {
+          flexDirection: "row",
+          backgroundColor: colors.surface || "#f5f5f5",
+          borderRadius: getSpacing(6),
+          padding: 2,
+          marginBottom: getSpacing(12),
+        },
+
+        compactMethodTab: {
+          flex: 1,
+          paddingVertical: getSpacing(6),
+          paddingHorizontal: getSpacing(4),
+          borderRadius: getSpacing(4),
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 28,
+        },
+      }),
+    [
+      spacing,
+      isKeyboardVisible,
+      height,
+      fontSize,
+      fonts,
+      colors,
+      getSpacing,
+      getResponsiveValue,
+      isVerySmallScreen,
+      getFontSize,
+    ]
+  );
+
+  // Handle input changes - phone only
+  const handleValueChange = useCallback(
+    (text: string) => {
+      // keep only digits and limit to 9 local digits (e.g., '5XXXXXXXX')
+      const cleanText = text.replace(/\D/g, "");
+      const formattedPhone = cleanText ? `+966${cleanText}` : "";
+      handleInputChange("value", formattedPhone);
+    },
+    [handleInputChange]
+  );
+
+  // Handle sign in (phone-only)
+  const handleSignIn = useCallback(async () => {
+    const isValid = validateForm();
+    if (!isValid) {
+      console.log("Form has errors:", errors);
+      return;
     }
-  };
 
-  // دالة تنسيق رقم الجوال
-  const handlePhoneInput = (text: string) => {
-    if (signInMethod === "phone") {
-      const cleanText = text.replace(/\D/g, ""); // إزالة غير الأرقام
-      handleInputChange("value", cleanText);
-    } else {
-      handleInputChange("value", text);
+    setIsSigningIn(true);
+
+    try {
+      const formattedPhone = formatPhoneNumber(form.value);
+      console.log("Signing in with phone:", formattedPhone);
+
+      const phoneExists = await checkPhoneExists(formattedPhone);
+      if (!phoneExists) {
+        Alert.alert("Error", "Phone number not found");
+        return;
+      }
+
+      const result = await signInWithPhone(formattedPhone);
+      if (result.error) {
+        Alert.alert("Error", result.error);
+        return;
+      }
+
+      // Navigate to OTP entry
+      push(
+        `/otp-modal?identifier=${encodeURIComponent(
+          formattedPhone
+        )}&method=phone&type=signin`
+      );
+    } catch (error) {
+      console.error("Sign in error:", error);
+      Alert.alert("Error", "An error occurred during sign in");
+    } finally {
+      setIsSigningIn(false);
     }
-  };
+  }, [
+    validateForm,
+    form.value,
+    errors,
+    formatPhoneNumber,
+    signInWithPhone,
+    checkPhoneExists,
+    push,
+    setIsSigningIn,
+  ]);
 
-  // قيمة الحقل المعروضة
+  const handleSignUpPress = useCallback(() => {
+    push("/(auth)/sign-up");
+  }, [push]);
+
+  const handleResetForm = useCallback(() => {
+    resetForm();
+  }, [resetForm]);
+
+  // Get display value for input (strip the +966 for user convenience)
   const getDisplayValue = () => {
-    if (signInMethod === "phone") {
-      return form.value.replace("+966", ""); // إزالة كود البلد للعرض
-    }
-    return form.value;
+    return form.value.replace("+966", "");
   };
-
-  // حساب القيم المرنة
-  const spacing = {
-    horizontal: getResponsiveValue(12, 16, 20, 24, 28),
-    vertical: isKeyboardVisible
-      ? getResponsiveValue(4, 6, 8, 10, 12)
-      : getResponsiveValue(16, 20, 24, 30, 36),
-    bottom: getResponsiveValue(12, 16, 20, 24, 28),
-    input: getResponsiveValue(12, 16, 20, 24, 28),
-    button: getResponsiveValue(12, 16, 20, 24, 28),
-    link: getResponsiveValue(12, 16, 20, 24, 28),
-    methodSwitcher: getResponsiveValue(16, 20, 24, 28, 32),
-    quickSwitch: getResponsiveValue(8, 12, 16, 20, 24),
-  };
-
-  const fontSize = {
-    methodTab: getFontSize(12, 10, 16),
-    link: getFontSize(14, 12, 18),
-    quickSwitch: getFontSize(12, 10, 16),
-    forgotPassword: getFontSize(12, 10, 16),
-  };
-
-  const styles = StyleSheet.create({
-    formContainer: {
-      flex: 1,
-      paddingHorizontal: spacing.horizontal,
-      paddingTop: spacing.vertical,
-      paddingBottom: spacing.bottom,
-      minHeight: isKeyboardVisible ? height * 0.6 : height * 0.8,
-    },
-
-    // تبديل طرق تسجيل الدخول
-    methodSwitcher: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      backgroundColor: colors.surface || "#f5f5f5",
-      borderRadius: getResponsiveValue(8, 10, 12, 14, 16),
-      padding: getResponsiveValue(2, 3, 4, 5, 6),
-      marginBottom: spacing.methodSwitcher,
-      elevation: isVerySmallScreen ? 1 : 2,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-    },
-
-    methodTab: {
-      flex: 1,
-      paddingVertical: getResponsiveValue(8, 10, 12, 14, 16),
-      paddingHorizontal: getResponsiveValue(6, 8, 12, 16, 20),
-      borderRadius: getResponsiveValue(6, 7, 8, 10, 12),
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: getResponsiveValue(36, 40, 44, 48, 52),
-    },
-
-    activeMethodTab: {
-      backgroundColor: colors.primary || "#FF5C39",
-      elevation: 2,
-      shadowColor: colors.primary || "#FF5C39",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-    },
-
-    methodTabText: {
-      fontSize: fontSize.methodTab,
-      fontFamily: fonts.Medium || fonts.Regular || "System",
-      color: colors.text || "#666666",
-      textAlign: "center",
-      lineHeight: fontSize.methodTab * 1.3,
-    },
-
-    activeMethodTabText: {
-      color: "#ffffff",
-      fontFamily: fonts.SemiBold || fonts.Medium || "System",
-    },
-
-    // حاوية الحقول
-    inputContainer: {
-      width: "100%",
-      marginBottom: spacing.input,
-      flex: isKeyboardVisible ? 1 : 0,
-    },
-
-    // نسيت كلمة المرور
-    forgotPasswordContainer: {
-      width: "100%",
-      paddingHorizontal: getSpacing(4),
-      flexDirection: isRTL ? "row" : "row-reverse",
-      justifyContent: "flex-start",
-      alignItems: "center",
-      marginTop: getSpacing(6),
-    },
-
-    forgotPasswordButton: {
-      flexDirection: "row",
-      paddingHorizontal: getSpacing(8),
-      paddingVertical: getSpacing(4),
-      minHeight: getResponsiveValue(28, 32, 36, 40, 44),
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: getSpacing(4),
-    },
-
-    forgotPasswordText: {
-      color: colors.error || "#FF0000",
-      fontSize: fontSize.forgotPassword,
-      textDecorationLine: "underline",
-      fontFamily: fonts.SemiBold || fonts.Bold || "System",
-      textAlign: isRTL ? "right" : "left",
-      lineHeight: fontSize.forgotPassword * 1.3,
-    },
-
-    // زر تسجيل الدخول
-    signInButton: {
-      marginTop: spacing.button,
-      marginBottom: isKeyboardVisible ? getSpacing(8) : spacing.button,
-      width: "100%",
-    },
-
-    // التبديل السريع
-    quickSwitchContainer: {
-      alignItems: "center",
-      marginBottom: spacing.quickSwitch,
-    },
-
-    quickSwitchButton: {
-      paddingHorizontal: getResponsiveValue(12, 16, 20, 24, 28),
-      paddingVertical: getResponsiveValue(6, 8, 10, 12, 14),
-      borderRadius: getResponsiveValue(16, 18, 20, 22, 24),
-      backgroundColor: colors.surface || "#f0f0f0",
-      minHeight: getResponsiveValue(32, 36, 40, 44, 48),
-      alignItems: "center",
-      justifyContent: "center",
-      elevation: 1,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-    },
-
-    quickSwitchText: {
-      fontSize: fontSize.quickSwitch,
-      fontFamily: fonts.Medium || "System",
-      color: colors.primary || "#FF5C39",
-      textAlign: "center",
-      lineHeight: fontSize.quickSwitch * 1.3,
-    },
-
-    // رابط إنشاء الحساب
-    linkContainer: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "center",
-      alignItems: "center",
-      marginTop: spacing.link,
-      marginBottom: getResponsiveValue(16, 20, 30, 40, 50),
-      paddingVertical: getSpacing(8),
-      paddingHorizontal: getSpacing(12),
-      minHeight: getResponsiveValue(32, 36, 40, 44, 48),
-      flexWrap: "wrap", // للتعامل مع النصوص الطويلة
-    },
-
-    linkText: {
-      fontSize: fontSize.link,
-      fontFamily: fonts.Regular || "System",
-      color: colors.text || "#000000",
-      textAlign: "center",
-      lineHeight: fontSize.link * 1.3,
-      flexShrink: 1, // يسمح بالانكماش عند الحاجة
-    },
-
-    linkTextPrimary: {
-      fontSize: fontSize.link,
-      fontFamily: fonts.SemiBold || "System",
-      color: colors.primary || "#FF5C39",
-      lineHeight: fontSize.link * 1.3,
-      flexShrink: 1, // يسمح بالانكماش عند الحاجة
-      ...(isRTL
-        ? { marginRight: getSpacing(6) }
-        : { marginLeft: getSpacing(6) }),
-    },
-
-    // إضافة styles للتحكم في المساحة عند ظهور لوحة المفاتيح
-    keyboardAwareContainer: {
-      flex: 1,
-      justifyContent: isKeyboardVisible ? "flex-start" : "space-between",
-    },
-
-    // حاوية للمحتوى الذي يختفي عند ظهور لوحة المفاتيح
-    hiddenOnKeyboard: {
-      opacity: isKeyboardVisible ? 0 : 1,
-      height: isKeyboardVisible ? 0 : "auto",
-      overflow: "hidden",
-      marginTop: isKeyboardVisible ? 0 : spacing.link,
-    },
-
-    // تحسين للشاشات الصغيرة جداً
-    compactMode: {
-      paddingHorizontal: isVerySmallScreen ? 8 : spacing.horizontal,
-      paddingVertical: isVerySmallScreen ? 4 : spacing.vertical,
-    },
-
-    // محدد طريقة تسجيل الدخول المدمج
-    compactMethodSwitcher: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      backgroundColor: colors.surface || "#f5f5f5",
-      borderRadius: getSpacing(6),
-      padding: 2,
-      marginBottom: getSpacing(12),
-    },
-    compactMethodTab: {
-      flex: 1,
-      paddingVertical: getSpacing(6),
-      paddingHorizontal: getSpacing(4),
-      borderRadius: getSpacing(4),
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: 28,
-    },
-  });
 
   return (
-    <View
+    <ScrollView
+      ref={scrollViewRef}
       style={[styles.formContainer, isVerySmallScreen && styles.compactMode]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.keyboardAwareContainer}>
-        {/* تبديل طرق تسجيل الدخول */}
-        <View style={styles.hiddenOnKeyboard}>
-          <View
-            style={
-              isVerySmallScreen
-                ? styles.compactMethodSwitcher
-                : styles.methodSwitcher
-            }
-          >
-            <TouchableOpacity
-              style={[
-                isVerySmallScreen ? styles.compactMethodTab : styles.methodTab,
-                signInMethod === "phone" && styles.activeMethodTab,
-              ]}
-              onPress={() => handleSignInMethodChange("phone")}
-              activeOpacity={0.7}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Text
-                style={[
-                  styles.methodTabText,
-                  signInMethod === "phone" && styles.activeMethodTabText,
-                ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit={isVerySmallScreen}
-                minimumFontScale={0.8}
-              >
-                {texts.phoneMethodTitle}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                isVerySmallScreen ? styles.compactMethodTab : styles.methodTab,
-                signInMethod === "email" && styles.activeMethodTab,
-              ]}
-              onPress={() => handleSignInMethodChange("email")}
-              activeOpacity={0.7}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Text
-                style={[
-                  styles.methodTabText,
-                  signInMethod === "email" && styles.activeMethodTabText,
-                ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit={isVerySmallScreen}
-                minimumFontScale={0.8}
-              >
-                {texts.emailMethodTitle}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                isVerySmallScreen ? styles.compactMethodTab : styles.methodTab,
-                signInMethod === "password" && styles.activeMethodTab,
-              ]}
-              onPress={() => handleSignInMethodChange("password")}
-              activeOpacity={0.7}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Text
-                style={[
-                  styles.methodTabText,
-                  signInMethod === "password" && styles.activeMethodTabText,
-                ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit={isVerySmallScreen}
-                minimumFontScale={0.8}
-              >
-                {texts.passwordMethodTitle}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Input Fields */}
+        {/* Input Fields (phone only) */}
         <View style={styles.inputContainer}>
-          {/* حقل البريد الإلكتروني أو رقم الجوال */}
           <InputField
-            label={inputLabel}
-            placeholder={inputPlaceholder}
-            icon={
-              signInMethod === "phone"
-                ? icons.phone
-                : signInMethod === "email"
-                ? icons.email
-                : icons.person
-            }
+            label={getLabels.phone}
+            icon={icons.phone}
             value={getDisplayValue()}
-            onChangeText={handlePhoneInput}
-            keyboardType={keyboardType}
-            maxLength={maxLength}
-            returnKeyType={showPasswordField ? "next" : "done"}
+            onChangeText={handleValueChange}
+            keyboardType="numeric"
+            maxLength={9}
+            returnKeyType="done"
             autoCorrect={false}
-            autoCapitalize={signInMethod === "email" ? "none" : "words"}
-            onSubmitEditing={showPasswordField ? undefined : handleSubmit}
+            autoCapitalize="none"
+            onSubmitEditing={handleSignIn}
+            placeholder={getLabels.inputPlaceholder}
           />
-
-          {/* حقل كلمة المرور (يظهر فقط في طريقة كلمة المرور) */}
-          {showPasswordField && (
-            <InputField
-              label={texts.passwordLabel}
-              placeholder={texts.passwordPlaceholder}
-              icon={icons.lock}
-              value={form.password}
-              onChangeText={(text) => handleInputChange("password", text)}
-              secureTextEntry
-              returnKeyType="done"
-              autoCorrect={false}
-              autoCapitalize="none"
-              onSubmitEditing={handleSubmit}
-            />
-          )}
-
-          {/* رابط نسيت كلمة المرور */}
-          {(showPasswordField ||
-            signInMethod === "phone" ||
-            signInMethod === "email") && (
-            <View style={styles.forgotPasswordContainer}>
-              <TouchableOpacity
-                style={styles.forgotPasswordButton}
-                onPress={() => push("/(auth)/reset/email")}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text
-                  style={styles.forgotPasswordText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit={isVerySmallScreen}
-                  minimumFontScale={0.8}
-                >
-                  {texts.forgotPassword}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {errors.value && <Text style={styles.errorText}>{errors.value}</Text>}
         </View>
 
         {/* Sign In Button */}
         <View style={styles.signInButton}>
           <CustomButton
-            title={buttonText}
-            onPress={handleSubmit}
-            loading={loading}
-            disabled={loading}
+            title={getLabels.loginTitle}
+            onPress={handleSignIn}
+            loading={isSigningIn}
+            disabled={isSigningIn}
+          />
+
+          <CustomButton
+            title="Reset Form"
+            onPress={handleResetForm}
+            disabled={isSigningIn}
+            style={{ marginTop: getSpacing(8) }}
           />
         </View>
 
-        {/* التبديل السريع بين الطرق & OAuth & Sign Up Link - مخفي عند ظهور لوحة المفاتيح */}
+        {/* Sign Up Link */}
         <View style={styles.hiddenOnKeyboard}>
-          {/* التبديل السريع بين الطرق */}
-          {isPasswordMethod && (
-            <View style={styles.quickSwitchContainer}>
-              <TouchableOpacity
-                style={styles.quickSwitchButton}
-                onPress={() => handleSignInMethodChange("phone")}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text
-                  style={styles.quickSwitchText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit={isVerySmallScreen}
-                  minimumFontScale={0.8}
-                >
-                  {texts.switchToOTP}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {isOTPMethod && (
-            <View style={styles.quickSwitchContainer}>
-              <TouchableOpacity
-                style={styles.quickSwitchButton}
-                onPress={() => handleSignInMethodChange("password")}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text
-                  style={styles.quickSwitchText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit={isVerySmallScreen}
-                  minimumFontScale={0.8}
-                >
-                  {texts.switchToPassword}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* OAuth Section */}
-          <OAuth />
-
-          {/* رابط إنشاء حساب */}
           <TouchableOpacity
             style={styles.linkContainer}
-            onPress={() => push("/(auth)/sign-up")}
+            onPress={handleSignUpPress}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -523,7 +441,7 @@ const SignInForm = () => {
               adjustsFontSizeToFit={isVerySmallScreen}
               minimumFontScale={0.8}
             >
-              {texts.createAccount}
+              {getLabels.createAccount}
             </Text>
             <Text
               style={styles.linkTextPrimary}
@@ -531,12 +449,12 @@ const SignInForm = () => {
               adjustsFontSizeToFit={isVerySmallScreen}
               minimumFontScale={0.8}
             >
-              {texts.signUpLink}
+              {getLabels.signUp}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 

@@ -570,7 +570,7 @@ const createStyles = (
     backButtonContainer: {
       width: "100%",
       alignItems: "flex-start",
-      paddingHorizontal: 10,
+      paddingHorizontal: 1,
       paddingTop: 5,
       paddingBottom: keyboardVisible ? 20 : 50,
     },

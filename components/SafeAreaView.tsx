@@ -32,13 +32,20 @@ export const SafeAreaScrollView: React.FC<SafeAreaScrollViewProps> = ({
     <ScrollView
       style={[
         styles.container,
-        { paddingTop: insets.top, backgroundColor: colors.background },
+        {
+          paddingTop: insets.top,
+          backgroundColor: colors.background,
+        },
         style,
       ]}
       contentContainerStyle={[
         styles.contentContainer,
         contentContainerStyle,
-        { justifyContent: "flex-start", alignItems: "center" },
+        {
+          justifyContent: "flex-start",
+          alignItems: "center",
+          paddingBottom: 140,
+        },
       ]}
       showsVerticalScrollIndicator={showsVerticalScrollIndicator}
       {...scrollViewProps}

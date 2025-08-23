@@ -67,7 +67,7 @@ interface OTPComponentProps {
 const OTPComponent: React.FC<OTPComponentProps> = ({
   onVerifyOTP,
   onResendOTP,
-  otpLength = 4,
+  otpLength = 6,
   closeModal,
   emailORPhoneNumber,
 }) => {
@@ -168,7 +168,7 @@ const OTPComponent: React.FC<OTPComponentProps> = ({
           console.log(
             `✅ Demo: OTP ${enteredOtp} verified successfully for ${emailORPhoneNumber}`
           );
-          onVerifyOTP("ok");
+          onVerifyOTP(enteredOtp);
         } else {
           // Simulate API error
           setError(t.invalidOTP);
