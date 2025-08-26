@@ -24,7 +24,7 @@ interface NearestCarResult {
   discount_percentage: number;
 }
 
-interface SearchResult {
+export interface SearchResult {
   car_id: string;
   brand_name_ar: string;
   brand_name_en: string;

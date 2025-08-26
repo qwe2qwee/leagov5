@@ -1,0 +1,75 @@
+{
+  "cli": {
+    "version": ">= 16.17.4",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "base": {
+      "node": "20.11.1",
+      "yarn": "1.22.19",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tqkxijjmpqsvdnmcmzhj.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxa3hpamptcHFzdmRubWNtemhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzMzI1NjYsImV4cCI6MjA2OTkwODU2Nn0.1ljzkHmUR0Ek_5GKCxIol5cp7wdHt7XRmPAm_xJx6Uc",
+        "EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLSend": "https://tqkxijjmpqsvdnmcmzhj.supabase.co/functions/v1/send-otp",
+        "EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLVeryfiy": "https://tqkxijjmpqsvdnmcmzhj.supabase.co/functions/v1/verify-otp"
+      },
+      "channel": "base"
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "ENVIRONMENT": "development",
+        "APP_VARIANT": "development"
+      },
+      "android": {
+        "buildType": "apk",
+        "withoutCredentials": true
+      },
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug"
+      },
+      "channel": "development"
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "ENVIRONMENT": "preview",
+        "APP_VARIANT": "preview"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "ENVIRONMENT": "production",
+        "APP_VARIANT": "production"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal",
+        "releaseStatus": "draft"
+      },
+      "ios": {
+        "appleId": "your-apple-id@email.com",
+        "ascAppId": "your-app-store-connect-id",
+        "appleTeamId": "your-apple-team-id"
+      }
+    }
+  }
+}

@@ -304,6 +304,7 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
     },
     actionButton: {
       backgroundColor: "rgba(255, 255, 255, 0.25)",
+      display: "none",
       paddingHorizontal: actionButtonPadding.horizontal,
       paddingVertical: actionButtonPadding.vertical,
       borderRadius: getSpacing(getResponsiveValue(10, 11, 12, 15, 18)),
@@ -532,7 +533,7 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
 interface AnnouncementSectionProps {
   announcements: Announcement[];
   title?: string;
-  onAnnouncementPress?: (announcement: Announcement) => void;
+  onAnnouncementPress?: (announcement: Announcement) => any;
   showAllButton?: boolean;
   onShowAllPress?: () => void;
 }
