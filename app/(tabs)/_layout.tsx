@@ -13,15 +13,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { icons } from "@/constants";
-import { Colors } from "@/constants/Colors";
 import { useTabBarHeight } from "@/context/TabBarHeightContext";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// زر التاب
+// زر التاب مع تحسينات
 interface CustomTabButtonProps
   extends React.PropsWithChildren,
     TabTriggerSlotProps {
@@ -33,6 +32,7 @@ const CustomTabButton = React.forwardRef<View, CustomTabButtonProps>(
     const { isSmallScreen, isMediumScreen } = useResponsive();
     const { colors } = useTheme();
 
+    // تنظيف الـ props لتجنب التحذيرات
     const filteredProps = Object.fromEntries(
       Object.entries(props).filter(([_, value]) => value !== null)
     );
@@ -55,6 +55,7 @@ const CustomTabButton = React.forwardRef<View, CustomTabButtonProps>(
         onPress={props.onPress !== null ? props.onPress : undefined}
         {...filteredProps}
         style={styles.tabButton}
+        activeOpacity={0.7}
       >
         <View
           style={[
@@ -81,11 +82,11 @@ const CustomTabButton = React.forwardRef<View, CustomTabButtonProps>(
 );
 CustomTabButton.displayName = "CustomTabButton";
 
-// تخطيط التابز
+// تخطيط التابز المحسن
 export default function TabLayout() {
   const { isSmallScreen, isMediumScreen } = useResponsive();
+  const { colors } = useTheme();
   const { setHeight } = useTabBarHeight();
-  const insets = useSafeAreaInsets();
 
   const getTabBarHeight = () => {
     if (isSmallScreen) return 70;
@@ -99,6 +100,8 @@ export default function TabLayout() {
     return 20;
   };
 
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs>
       <TabSlot />
@@ -108,15 +111,15 @@ export default function TabLayout() {
         style={[
           styles.customTabBar,
           {
-            backgroundColor: Colors["dark"].backgroundTertiary,
+            backgroundColor: colors.backgroundTertiary,
             height: getTabBarHeight(),
             marginHorizontal: getHorizontalMargin(),
-            bottom: insets.bottom + 15, // +30 عشان عامل bottom:30
+            bottom: insets.bottom + 15,
           },
         ]}
         onLayout={(event) => {
           const { height } = event.nativeEvent.layout;
-          setHeight(height * 2); // +30 عشان عامل bottom:30
+          setHeight(height + insets.bottom + 15);
         }}
       >
         <TabTrigger name="index" href="/" asChild>
@@ -136,7 +139,7 @@ export default function TabLayout() {
         </TabTrigger>
       </View>
 
-      {/* مخفي */}
+      {/* مخفي - للتوافق مع expo-router */}
       <TabList style={{ display: "none" }}>
         <TabTrigger name="index" href="/" />
         <TabTrigger name="Cars" href="/Cars" />
@@ -165,7 +168,6 @@ const styles = StyleSheet.create({
   iconContainer: {
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 50,
     overflow: "hidden",
   },
 });

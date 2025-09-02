@@ -1,9 +1,9 @@
+import "react-native-reanimated";
+
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreenExpo from "expo-splash-screen";
 import { useEffect, useState } from "react";
-
-import "react-native-reanimated";
 
 import { AuthProvider } from "@/components/Auth/AuthProvider";
 import SplashScreen from "@/components/SplashScreen";
@@ -76,6 +76,14 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="screens/Car-details"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="screens/Booking"
+            options={{ headerShown: false }}
+          />
           <Stack.Screen name="+not-found" options={{ headerShown: false }} />
           <Stack.Screen
             name="otp-modal"

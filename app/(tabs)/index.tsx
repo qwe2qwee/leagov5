@@ -1,10 +1,16 @@
 import { useTabBarHeight } from "@/context/TabBarHeightContext";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Animated, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AnnouncementsContainer from "@/components/Home/AnnouncementsContainer";
-import CarsGrid from "@/components/Home/CarsGrid";
+import CarCard from "@/components/Home/CarCard";
 import LoadingEmpty from "@/components/Home/LoadingEmpty";
 import { SafeAreaScrollView } from "@/components/SafeAreaView";
 import {
@@ -18,17 +24,27 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { transformCarData } from "@/utils/cars/transformCarData";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+} from "react-native";
+
+// Create animated FlatList
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 
 export default function HomeScreen() {
+  // All hooks at the top level - no conditional hooks
   const { colors } = useTheme();
-  const { getSpacing, getFontSize, width } = useResponsive();
+  const { spacing, typography, width } = useResponsive();
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
-
   const insets = useSafeAreaInsets();
   const { height: tabBarHeight } = useTabBarHeight();
 
-  // Hooks
   const {
     data: announcements,
     isLoading: announcementsLoading,
@@ -39,36 +55,82 @@ export default function HomeScreen() {
     cars,
     nearestCars,
     loading: carsLoading,
+    loadingMore,
+    hasMoreCars,
     getNearestCars,
-    fetchCars,
+    loadMoreCars,
+    refreshCars,
   } = useCars();
+
   const { userLocation, getCurrentLocation } = useLocation();
 
-  // Animation values for announcements
+  // Animation refs
   const scrollY = useRef(new Animated.Value(0)).current;
   const announcementScale = useRef(new Animated.Value(1)).current;
   const announcementOpacity = useRef(new Animated.Value(1)).current;
 
-  // Loading states and pagination
+  // State
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
 
-  const spacing = {
-    sm: getSpacing(8),
-    md: getSpacing(16),
-    lg: getSpacing(24),
-  };
+  // Calculate dimensions
+  const cardPadding = spacing.lg;
+  const cardGap = spacing.md;
+  const cardWidth = (width - cardPadding * 2 - cardGap) / 2;
 
-  const fontSizes = {
-    md: getFontSize(16),
-    lg: getFontSize(18),
-  };
+  // All callbacks defined consistently
+  const handleAnnouncementPress = useCallback((announcement: Announcement) => {
+    console.log("Announcement pressed:", announcement.title_en);
+  }, []);
 
-  const paab = tabBarHeight + insets.bottom - spacing.lg * 3;
+  const handleViewAllPress = useCallback(() => {
+    console.log("View all announcements pressed");
+  }, []);
 
-  // Sort announcements by priority then date
+  const handleCarPress = useCallback((car: any) => {
+    console.log("Car pressed:", car.id);
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: any) => {
+      const currentScrollY = event.nativeEvent.contentOffset.y;
+      scrollY.setValue(currentScrollY);
+
+      const maxScroll = 100;
+      const progress = Math.min(currentScrollY / maxScroll, 1);
+      const newScale = 1 - progress * 0.15;
+      const newOpacity = 1 - progress * 0.3;
+      announcementScale.setValue(Math.max(newScale, 0.85));
+      announcementOpacity.setValue(Math.max(newOpacity, 0.7));
+    },
+    [scrollY, announcementScale, announcementOpacity]
+  );
+
+  const onRefreshHandler = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchAnnouncements(),
+        refreshCars(),
+        getCurrentLocation({ forceRefresh: true }),
+      ]);
+    } catch (error) {
+      console.error("خطأ في التحديث:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchAnnouncements, refreshCars, getCurrentLocation]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!hasMoreCars || loadingMore || isRefreshing) return;
+
+    try {
+      await loadMoreCars();
+    } catch (error) {
+      console.error("خطأ في تحميل المزيد:", error);
+    }
+  }, [hasMoreCars, loadingMore, isRefreshing, loadMoreCars]);
+
+  // All memos defined consistently
   const sortedAnnouncements = useMemo(() => {
     if (!announcements || announcements.length === 0) return [];
 
@@ -83,168 +145,375 @@ export default function HomeScreen() {
     });
   }, [announcements]);
 
-  // Merge nearest + regular cars and dedupe
   const allCarsData = useMemo(() => {
-    const combined = nearestCars.length > 0 ? [...nearestCars, ...cars] : cars;
-    const uniqueCars = combined.filter(
-      (car: any, index, self) =>
-        index ===
-        self.findIndex(
-          (c: any) =>
-            (c.car_id || c.car_car_id) === (car.car_id || car.car_car_id)
-        )
+    if (nearestCars.length === 0) return cars;
+
+    const nearestCarIds = new Set(nearestCars.map((car) => car.car_id));
+    const filteredRegularCars = cars.filter(
+      (car) => !nearestCarIds.has(car.id)
     );
-    return uniqueCars;
+
+    return [...nearestCars, ...filteredRegularCars];
   }, [cars, nearestCars]);
 
-  const displayedCars = allCarsData.slice(0, currentPage * ITEMS_PER_PAGE);
-  const hasMoreCars = allCarsData.length > displayedCars.length;
+  const flatListData = useMemo(() => {
+    const data = [];
 
-  // Scroll handler (delegated here, but values passed to AnnouncementsContainer)
-  const handleScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    {
-      useNativeDriver: true,
-      listener: (event: any) => {
-        const currentScrollY = event.nativeEvent.contentOffset.y;
-        if (sortedAnnouncements.length > 0) {
-          const maxScroll = 100;
-          const progress = Math.min(currentScrollY / maxScroll, 1);
-          const newScale = 1 - progress * 0.15;
-          const newOpacity = 1 - progress * 0.3;
-          announcementScale.setValue(Math.max(newScale, 0.85));
-          announcementOpacity.setValue(Math.max(newOpacity, 0.7));
-        }
-      },
+    if (sortedAnnouncements.length > 0) {
+      data.push({ type: "announcements", data: sortedAnnouncements });
+      data.push({ type: "divider" });
     }
+
+    data.push({ type: "cars_header", count: allCarsData.length });
+
+    // Group cars in pairs for grid layout
+    for (let i = 0; i < allCarsData.length; i += 2) {
+      const leftCar = allCarsData[i];
+      const rightCar = allCarsData[i + 1] || null;
+
+      data.push({
+        type: "car_row",
+        leftCar,
+        rightCar,
+        rowIndex: Math.floor(i / 2),
+      });
+    }
+
+    return data;
+  }, [sortedAnnouncements, allCarsData]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+        headerContainer: {
+          paddingHorizontal: cardPadding,
+          paddingTop: spacing.lg,
+          paddingBottom: spacing.md,
+        },
+        title: {
+          fontSize: typography.h3,
+          fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
+          color: colors.text,
+          textAlign: isRTL ? "right" : "left",
+        },
+        subtitle: {
+          fontSize: typography.caption,
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+          textAlign: isRTL ? "right" : "left",
+          marginTop: spacing.xs,
+        },
+        divider: {
+          height: 1,
+          marginVertical: spacing.md,
+          marginHorizontal: spacing.md,
+          backgroundColor: colors.border + "50",
+        },
+        carRow: {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          paddingHorizontal: cardPadding,
+          marginBottom: spacing.lg,
+        },
+        carContainer: {
+          width: cardWidth,
+        },
+        singleCarContainer: {
+          width: cardWidth,
+          marginRight: cardWidth + cardGap, // Push single car to left
+        },
+        loadMoreContainer: {
+          paddingVertical: spacing.xl,
+          alignItems: "center",
+          width: "100%",
+        },
+        loadMoreButton: {
+          backgroundColor: colors.backgroundSecondary,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.xl,
+          borderRadius: spacing.md,
+          flexDirection: isRTL ? "row-reverse" : "row",
+          alignItems: "center",
+          gap: spacing.sm,
+          minHeight: 48,
+        },
+        loadMoreText: {
+          fontSize: typography.body,
+          fontFamily: fonts.Medium || fonts.Regular,
+          color: colors.primary,
+          textAlign: "center",
+        },
+        loadingIndicator: {
+          paddingVertical: spacing.lg,
+          alignItems: "center",
+        },
+        loadingText: {
+          fontSize: typography.caption,
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+          marginTop: spacing.sm,
+          textAlign: "center",
+        },
+        emptyContainer: {
+          paddingVertical: spacing.xl * 2,
+          paddingHorizontal: spacing.lg,
+          alignItems: "center",
+        },
+        emptyText: {
+          fontSize: typography.body,
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+          textAlign: "center",
+          marginTop: spacing.md,
+        },
+      }),
+    [colors, cardPadding, spacing, typography, fonts, isRTL, cardWidth]
   );
 
-  const loadMoreCars = async () => {
-    if (isLoadingMore || !hasMoreCars) return;
-    setIsLoadingMore(true);
-    try {
-      setCurrentPage((p) => p + 1);
-    } catch (error) {
-      console.error("خطأ في تحميل المزيد:", error);
-    } finally {
-      setIsLoadingMore(false);
+  // Render functions defined consistently
+  const renderItem = useCallback(
+    ({ item, index }: { item: any; index: number }) => {
+      switch (item.type) {
+        case "announcements":
+          return (
+            <Animated.View
+              style={{
+                transform: [{ scale: announcementScale }],
+                opacity: announcementOpacity,
+              }}
+            >
+              <AnnouncementsContainer
+                announcements={item.data}
+                announcementScale={announcementScale}
+                announcementOpacity={announcementOpacity}
+                onAnnouncementPress={handleAnnouncementPress}
+                onShowAllPress={handleViewAllPress}
+              />
+            </Animated.View>
+          );
+
+        case "divider":
+          return <View style={styles.divider} />;
+
+        case "cars_header":
+          return (
+            <View style={styles.headerContainer}>
+              <Text style={styles.title}>
+                {currentLanguage === "ar"
+                  ? "السيارات المتاحة"
+                  : "Available Cars"}
+              </Text>
+              {item.count > 0 && (
+                <Text style={styles.subtitle}>
+                  {currentLanguage === "ar"
+                    ? `${item.count} سيارة متاحة للحجز`
+                    : `${item.count} cars available for booking`}
+                </Text>
+              )}
+            </View>
+          );
+
+        case "car_row":
+          return (
+            <View style={styles.carRow}>
+              <View style={styles.carContainer}>
+                <CarCard
+                  car={transformCarData(item.leftCar)}
+                  language={currentLanguage}
+                  cardWidth={cardWidth}
+                />
+              </View>
+
+              {item.rightCar ? (
+                <View style={styles.carContainer}>
+                  <CarCard
+                    car={transformCarData(item.rightCar)}
+                    language={currentLanguage}
+                    cardWidth={cardWidth}
+                  />
+                </View>
+              ) : (
+                <View style={{ width: cardWidth }} />
+              )}
+            </View>
+          );
+
+        default:
+          return null;
+      }
+    },
+    [
+      announcementScale,
+      announcementOpacity,
+      handleAnnouncementPress,
+      handleViewAllPress,
+      styles,
+      currentLanguage,
+      cardPadding,
+      cardGap,
+      cardWidth,
+      handleCarPress,
+    ]
+  );
+
+  const renderFooter = useCallback(() => {
+    if (allCarsData.length === 0) return null;
+
+    if (!hasMoreCars && allCarsData.length > 0) {
+      return (
+        <View style={styles.loadMoreContainer}>
+          <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+            {currentLanguage === "ar"
+              ? "تم عرض جميع السيارات المتاحة"
+              : "All available cars loaded"}
+          </Text>
+        </View>
+      );
     }
-  };
 
-  const onRefresh = async () => {
-    setIsRefreshing(true);
-    setCurrentPage(1);
-    try {
-      await Promise.all([
-        refetchAnnouncements(),
-        fetchCars(5),
-        getCurrentLocation({ forceRefresh: true }),
-      ]);
-    } catch (error) {
-      console.error("خطأ في التحديث:", error);
-    } finally {
-      setIsRefreshing(false);
+    if (!hasMoreCars) return null;
+
+    if (loadingMore) {
+      return (
+        <View style={styles.loadingIndicator}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>
+            {currentLanguage === "ar"
+              ? "جاري تحميل المزيد..."
+              : "Loading more cars..."}
+          </Text>
+        </View>
+      );
     }
-  };
 
-  const handleAnnouncementPress = (announcement: Announcement) => {
-    console.log("Announcement pressed:", announcement.title_en);
-  };
+    return (
+      <View style={styles.loadMoreContainer}>
+        <TouchableOpacity
+          style={styles.loadMoreButton}
+          onPress={handleLoadMore}
+          disabled={loadingMore}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="add-circle-outline"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={styles.loadMoreText}>
+            {currentLanguage === "ar"
+              ? "تحميل المزيد من السيارات"
+              : "Load More Cars"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [
+    allCarsData.length,
+    hasMoreCars,
+    loadingMore,
+    styles,
+    colors,
+    currentLanguage,
+    handleLoadMore,
+  ]);
 
-  const handleViewAllPress = () => {
-    console.log("View all announcements pressed");
-  };
+  const renderEmpty = useCallback(() => {
+    if (allCarsData.length > 0) return null;
 
-  const handleCarPress = (car: any) => {
-    console.log("Selected car:", car);
-  };
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="car-outline" size={64} color={colors.textMuted} />
+        <Text style={styles.emptyText}>
+          {currentLanguage === "ar"
+            ? "لا توجد سيارات متاحة حالياً"
+            : "No cars available at the moment"}
+        </Text>
+      </View>
+    );
+  }, [allCarsData.length, styles, colors, currentLanguage]);
 
+  // Effects at the bottom
   useEffect(() => {
-    const initializeData = async () => {
-      await getCurrentLocation();
-    };
-    initializeData();
-  }, []);
+    getCurrentLocation();
+  }, [getCurrentLocation]);
 
   useEffect(() => {
     if (userLocation) {
       getNearestCars(userLocation.lat, userLocation.lon, 5);
     }
-  }, [userLocation]);
+  }, [userLocation, getNearestCars]);
 
-  // Show a focused loading screen while initial fetch is happening
+  // Early returns after all hooks
   if ((announcementsLoading || carsLoading) && !isRefreshing) {
     return (
       <SafeAreaScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
       >
-        <LoadingEmpty loading text={isRTL ? "جاري التحميل..." : "Loading..."} />
+        <LoadingEmpty
+          loading
+          text={currentLanguage === "ar" ? "جاري التحميل..." : "Loading..."}
+        />
       </SafeAreaScrollView>
     );
   }
 
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.background,
-        paddingTop: insets.top,
-      }}
-    >
-      <Animated.ScrollView
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <AnimatedFlatList
+        data={flatListData}
+        renderItem={renderItem}
+        keyExtractor={(item: any, index) => `${item.type}-${index}`}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={{
+          paddingBottom: tabBarHeight,
+          flexGrow: 1,
+        }}
+        showsVerticalScrollIndicator={false}
+        onEndReached={() => {
+          if (
+            hasMoreCars &&
+            !loadingMore &&
+            !isRefreshing &&
+            allCarsData.length > 0
+          ) {
+            handleLoadMore();
+          }
+        }}
+        onEndReachedThreshold={0.3}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={onRefresh}
+            onRefresh={onRefreshHandler}
             colors={[colors.primary]}
             tintColor={colors.primary}
-            title={isRTL ? "جاري التحديث..." : "Refreshing..."}
+            title={
+              currentLanguage === "ar" ? "جاري التحديث..." : "Refreshing..."
+            }
             titleColor={colors.textSecondary}
           />
         }
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Announcements */}
-        {sortedAnnouncements.length > 0 && (
-          <AnnouncementsContainer
-            announcements={sortedAnnouncements}
-            announcementScale={announcementScale}
-            announcementOpacity={announcementOpacity}
-            onAnnouncementPress={handleAnnouncementPress}
-            onShowAllPress={handleViewAllPress}
-          />
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
+        keyboardShouldPersistTaps="handled"
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={8}
+        updateCellsBatchingPeriod={50}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          {
+            useNativeDriver: true,
+            listener: handleScroll,
+          }
         )}
-
-        {/* Divider */}
-        <View
-          style={{
-            height: 1,
-            marginVertical: 16,
-            marginHorizontal: 16,
-            backgroundColor: colors.border,
-          }}
-        />
-
-        {/* Cars grid */}
-        <CarsGrid
-          cars={displayedCars}
-          transformCarData={transformCarData}
-          onCarPress={handleCarPress}
-          isLoadingMore={isLoadingMore}
-          hasMore={hasMoreCars}
-          onLoadMore={loadMoreCars}
-          currentLanguage={currentLanguage}
-          isRTL={isRTL}
-          width={width}
-          spacing={spacing}
-          paab={paab}
-          fonts={fonts}
-          fontSizes={fontSizes}
-          colors={colors}
-        />
-      </Animated.ScrollView>
+      />
     </View>
   );
 }

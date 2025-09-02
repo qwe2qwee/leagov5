@@ -1,7 +1,3 @@
-// ============================
-// components/Search/SearchOverlay.tsx - Updated Version
-// ============================
-
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useLocation } from "@/hooks/useLocation";
@@ -71,8 +67,12 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
     "BMW",
   ]);
 
-  // Refs
+  // Refs for debouncing and preventing race conditions
   const searchInputRef = useRef<TextInput>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const suggestionsAbortRef = useRef<AbortController | null>(null);
+  const currentSearchQuery = useRef(searchQuery);
 
   const spacing = {
     xs: getSpacing(4),
@@ -84,6 +84,11 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
   const fontSizes = {
     md: getFontSize(16),
   };
+
+  // Update current search query ref
+  useEffect(() => {
+    currentSearchQuery.current = searchQuery;
+  }, [searchQuery]);
 
   // Keyboard event handlers
   useEffect(() => {
@@ -112,37 +117,121 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
     setKeyboardHeight(0);
   }, []);
 
-  // Handle search with debouncing
-  useEffect(() => {
-    const debounceTimer = setTimeout(async () => {
-      if (searchQuery.trim().length > 1) {
-        // Get suggestions for autocomplete
-        await getQuickSuggestions(searchQuery, currentLanguage);
+  // Cleanup function to abort ongoing requests
+  const cleanupRequests = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+    }
+    if (suggestionsAbortRef.current) {
+      suggestionsAbortRef.current.abort();
+    }
+  }, []);
 
-        // Perform actual search if query is long enough
-        if (searchQuery.trim().length > 2) {
+  // Enhanced search with proper debouncing and race condition handling
+  const performSearch = useCallback(
+    async (query: string) => {
+      const trimmedQuery = query.trim();
+
+      // Cancel any ongoing requests
+      cleanupRequests();
+
+      // Clear results if query is empty
+      if (!trimmedQuery) {
+        clearSuggestions();
+        clearSearchResults();
+        return;
+      }
+
+      // Create new abort controllers
+      searchAbortRef.current = new AbortController();
+      suggestionsAbortRef.current = new AbortController();
+
+      try {
+        // Get suggestions for queries > 1 character
+        if (trimmedQuery.length > 1) {
+          const suggestionsPromise = getQuickSuggestions(
+            trimmedQuery,
+            currentLanguage
+          );
+
+          // Wait for suggestions (quick operation)
+          await suggestionsPromise;
+
+          // Check if query hasn't changed while we were getting suggestions
+          if (currentSearchQuery.current !== query) {
+            return; // Query changed, abort
+          }
+        }
+
+        // Perform actual search for queries > 2 characters
+        if (trimmedQuery.length > 2) {
           await searchCars(
-            searchQuery,
+            trimmedQuery,
             currentLanguage,
             selectedFilters,
             "distance",
             userLocation || undefined
           );
-        }
-      } else {
-        clearSuggestions();
-        clearSearchResults();
-      }
-    }, 300);
 
-    return () => clearTimeout(debounceTimer);
-  }, [searchQuery, selectedFilters, currentLanguage, userLocation]);
+          // Final check if query is still the same
+          if (currentSearchQuery.current !== query) {
+            return; // Query changed, results are stale
+          }
+        }
+      } catch (error: any) {
+        // Only log error if it's not an abort
+        if (error.name !== "AbortError") {
+          console.error("Search error:", error);
+        }
+      }
+    },
+    [
+      currentLanguage,
+      selectedFilters,
+      userLocation,
+      cleanupRequests,
+      clearSuggestions,
+      clearSearchResults,
+      getQuickSuggestions,
+      searchCars,
+    ]
+  );
+
+  // Debounced search effect
+  useEffect(() => {
+    // Clear existing timeout
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    // Set new timeout
+    debounceRef.current = setTimeout(() => {
+      performSearch(searchQuery);
+    }, 300); // 300ms debounce
+
+    // Cleanup on unmount or dependency change
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [searchQuery, performSearch]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupRequests();
+    };
+  }, [cleanupRequests]);
 
   const handleSearch = useCallback(
     (query: string) => {
       setSearchQuery(query);
-      if (query.trim() && !recentSearches.includes(query)) {
-        setRecentSearches((prev) => [query, ...prev.slice(0, 4)]);
+      if (query.trim() && !recentSearches.includes(query.trim())) {
+        setRecentSearches((prev) => [query.trim(), ...prev.slice(0, 4)]);
       }
     },
     [recentSearches, setSearchQuery]
@@ -153,22 +242,29 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
       setSearchQuery(suggestion);
       clearSuggestions();
       searchInputRef.current?.blur();
+
+      // Add to recent searches
+      if (!recentSearches.includes(suggestion)) {
+        setRecentSearches((prev) => [suggestion, ...prev.slice(0, 4)]);
+      }
     },
-    [setSearchQuery, clearSuggestions]
+    [setSearchQuery, clearSuggestions, recentSearches]
   );
 
   const clearSearch = useCallback(() => {
+    cleanupRequests();
     setSearchQuery("");
     clearSearchResults();
     clearSuggestions();
     searchInputRef.current?.focus();
-  }, [clearSearchResults, clearSuggestions, setSearchQuery]);
+  }, [cleanupRequests, setSearchQuery, clearSearchResults, clearSuggestions]);
 
   const deactivateSearch = useCallback(() => {
+    cleanupRequests();
     setIsSearchActive(false);
     clearSuggestions();
     Keyboard.dismiss();
-  }, [setIsSearchActive, clearSuggestions]);
+  }, [cleanupRequests, setIsSearchActive, clearSuggestions]);
 
   const styles = {
     searchOverlay: {
@@ -190,6 +286,11 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
       backgroundColor: colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      elevation: 2,
+      shadowColor: colors.text,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
     },
     activeSearchContainer: {
       flex: 1,
@@ -202,6 +303,8 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
       gap: spacing.sm,
       marginRight: isRTL ? 0 : spacing.sm,
       marginLeft: isRTL ? spacing.sm : 0,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     activeSearchInput: {
       flex: 1,
@@ -210,14 +313,19 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
       fontFamily: fonts.Regular,
       textAlign: isRTL ? ("right" as const) : ("left" as const),
       paddingVertical: 4,
+      writingDirection:
+        currentLanguage === "ar" ? ("rtl" as const) : ("ltr" as const),
     } as TextStyle,
     cancelButton: {
       paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
     },
     cancelText: {
       fontSize: fontSizes.md,
       color: colors.primary,
-      fontFamily: fonts.Medium,
+      fontFamily: fonts.Medium || fonts.Regular,
+      writingDirection:
+        currentLanguage === "ar" ? ("rtl" as const) : ("ltr" as const),
     } as TextStyle,
     searchContent: {
       flex: 1,
@@ -229,10 +337,16 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
   const transformedSuggestions = {
     brands: suggestions
       .filter((s) => s.source === "brand")
-      .map((s) => ({ name_ar: s.suggestion, name_en: s.suggestion })),
+      .map((s) => ({
+        name_ar: s.suggestion,
+        name_en: s.suggestion,
+      })),
     models: suggestions
       .filter((s) => s.source === "model")
-      .map((s) => ({ name_ar: s.suggestion, name_en: s.suggestion })),
+      .map((s) => ({
+        name_ar: s.suggestion,
+        name_en: s.suggestion,
+      })),
     cars: suggestions
       .filter((s) => s.source === "car")
       .map((s) => ({
@@ -264,10 +378,18 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
             placeholderTextColor={colors.textMuted}
             autoFocus
             returnKeyType="search"
-            onSubmitEditing={() => clearSuggestions()}
+            onSubmitEditing={() => {
+              clearSuggestions();
+              searchInputRef.current?.blur();
+            }}
+            selectTextOnFocus={false}
+            clearButtonMode="never"
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={clearSearch}>
+            <TouchableOpacity
+              onPress={clearSearch}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Ionicons
                 name="close-circle"
                 size={20}
@@ -279,6 +401,7 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
         <TouchableOpacity
           onPress={deactivateSearch}
           style={styles.cancelButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.cancelText}>
             {currentLanguage === "ar" ? "إلغاء" : "Cancel"}
@@ -289,24 +412,26 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
       {/* Search Content */}
       <View style={styles.searchContent}>
         {/* Search Transition (Recent & Trending) */}
-        {!searchQuery && (
+        {!searchQuery.trim() && (
           <SearchTransition
             recentSearches={recentSearches}
             onSuggestionSelect={handleSuggestionSelect}
           />
         )}
 
-        {/* Search Suggestions */}
-        {suggestions.length > 0 && searchResults.length === 0 && (
-          <SearchSuggestions
-            suggestions={transformedSuggestions}
-            searchQuery={searchQuery}
-            onSuggestionSelect={handleSuggestionSelect}
-          />
-        )}
+        {/* Search Suggestions - show only when we have suggestions and no search results */}
+        {suggestions.length > 0 &&
+          searchQuery.trim().length > 1 &&
+          searchQuery.trim().length <= 2 && (
+            <SearchSuggestions
+              suggestions={transformedSuggestions}
+              searchQuery={searchQuery}
+              onSuggestionSelect={handleSuggestionSelect}
+            />
+          )}
 
-        {/* Search Results */}
-        {searchQuery && (
+        {/* Search Results - show when query is long enough */}
+        {searchQuery.trim().length > 2 && (
           <SearchResults
             searchResults={searchResults}
             searchLoading={searchLoading}

@@ -25,7 +25,8 @@
       },
       "android": {
         "buildType": "apk",
-        "withoutCredentials": true
+        "withoutCredentials": true,
+        "autoIncrement": "versionCode"
       },
       "ios": {
         "simulator": true,
@@ -48,10 +49,11 @@
     "production": {
       "extends": "base",
       "distribution": "store",
+      "autoIncrement": true,
       "channel": "production",
       "env": {
         "ENVIRONMENT": "production",
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "pro17duction"
       },
       "android": {
         "buildType": "app-bundle"

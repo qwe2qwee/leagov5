@@ -2,20 +2,24 @@ import { icons } from "@/constants";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
+import useLanguageStore from "@/store/useLanguageStore";
+import { useNavLockStore } from "@/store/useNavLockStore";
 import { Car, CarCardProps } from "@/types/CardTypes";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Badge } from "../ui/Badge";
 
 export const CarCard: React.FC<CarCardProps> = ({
   car,
-  onSelect,
   language = "ar",
   cardWidth,
 }) => {
   const { colors } = useTheme();
+  const { currentLanguage } = useLanguageStore();
+  const { lock, unlock } = useNavLockStore();
 
   const fonts = useFontFamily();
   const {
@@ -28,24 +32,30 @@ export const CarCard: React.FC<CarCardProps> = ({
     isLargeScreen,
   } = useResponsive();
 
+  // Use the language from store if not provided
+  const activeLanguage = language || currentLanguage;
+
   // Helper functions
   const getBrand = (car: Car) =>
-    language === "ar" ? car.brand_ar : car.brand_en;
+    activeLanguage === "ar" ? car.brand_ar : car.brand_en;
   const getModel = (car: Car) =>
-    language === "ar" ? car.model_ar : car.model_en;
+    activeLanguage === "ar" ? car.model_ar : car.model_en;
   const getColor = (car: Car) =>
-    language === "ar" ? car.color_ar : car.color_en;
+    activeLanguage === "ar" ? car.color_ar : car.color_en;
   const getTransmission = (car: Car) =>
-    language === "ar" ? car.specs.transmission_ar : car.specs.transmission_en;
+    activeLanguage === "ar"
+      ? car.specs.transmission_ar
+      : car.specs.transmission_en;
   const getBranchLocation = (car: Car) =>
-    language === "ar" ? car.branch.location_ar : car.branch.location_en;
+    activeLanguage === "ar" ? car.branch.location_ar : car.branch.location_en;
 
   const t = (key: string) => {
     const translations = {
-      "featured.new": language === "ar" ? "جديد" : "New",
-      "featured.unavailable": language === "ar" ? "غير متاح" : "Unavailable",
-      "featured.book": language === "ar" ? "احجز الآن" : "Book Now",
-      "common.sar": language === "ar" ? "ر.س" : "SAR",
+      "featured.new": activeLanguage === "ar" ? "جديد" : "New",
+      "featured.unavailable":
+        activeLanguage === "ar" ? "غير متاح" : "Unavailable",
+      "featured.book": activeLanguage === "ar" ? "احجز الآن" : "Book Now",
+      "common.sar": activeLanguage === "ar" ? "ر.س" : "SAR",
     };
     return translations[key as keyof typeof translations] || key;
   };
@@ -67,9 +77,44 @@ export const CarCard: React.FC<CarCardProps> = ({
     return 140;
   };
 
-  const handleBookNow = () => {
-    if (car.available && onSelect) {
-      onSelect(car);
+  const handleCardPress = () => {
+    try {
+      // Lock navigation to prevent double taps
+      lock();
+
+      // Navigate to car details page
+      router.push({
+        pathname: "/screens/Car-details",
+        params: {
+          carId: car.id,
+        },
+      });
+    } catch (error) {
+      console.error("[CarCard] Error navigating to car details:", error);
+      // Unlock navigation on error
+      unlock();
+    }
+  };
+
+  const handleBookNow = (e: any) => {
+    // Prevent event from bubbling to card press
+    e.stopPropagation();
+
+    if (car.available) {
+      try {
+        lock();
+
+        // Navigate to booking page
+        router.push({
+          pathname: "/screens/Booking",
+          params: {
+            carId: car.id,
+          },
+        });
+      } catch (error) {
+        console.error("[CarCard] Error navigating to booking:", error);
+        unlock();
+      }
     }
   };
 
@@ -77,7 +122,8 @@ export const CarCard: React.FC<CarCardProps> = ({
     (car.discount ?? 0) > 0
       ? Math.round(car.price.daily * (1 - (car.discount ?? 0) / 100))
       : car.price.daily;
-  // مسافة ديناميكية حسب حجم الشاشة
+
+  // Dynamic spacing based on screen size
   const dynamicPricingMargin = isSmallScreen
     ? getSpacing(1)
     : isMediumScreen
@@ -87,8 +133,8 @@ export const CarCard: React.FC<CarCardProps> = ({
   const styles = StyleSheet.create({
     card: {
       width: getCardWidth() + getSpacing(6),
-      // إرتفاع ثابت لكل الكروت
-      height: getImageHeight() + getSpacing(145), // fixed height for all cards
+      // Fixed height for all cards
+      height: getImageHeight() + getSpacing(145),
       backgroundColor: colors.surface,
       borderRadius: getSpacing(8),
       overflow: "hidden",
@@ -127,9 +173,9 @@ export const CarCard: React.FC<CarCardProps> = ({
       height: 20,
     },
     content: {
-      flex: 1, // يخلي المحتوى يمتد للمساحة المتاحة
+      flex: 1,
       padding: getSpacing(8),
-      justifyContent: "space-between", // يوزع المحتوى بالتساوي
+      justifyContent: "space-between",
     },
     carInfo: {
       marginBottom: getSpacing(4),
@@ -141,7 +187,7 @@ export const CarCard: React.FC<CarCardProps> = ({
       marginBottom: getSpacing(4),
     },
     featureItem: {
-      flexDirection: language === "ar" ? "row-reverse" : "row", // ترتيب الأيقونة حسب اللغة
+      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
       alignItems: "center",
       gap: getSpacing(2),
     },
@@ -162,27 +208,27 @@ export const CarCard: React.FC<CarCardProps> = ({
       justifyContent: "space-between",
       alignItems: "center",
       flexWrap: "nowrap",
-      marginBottom: dynamicPricingMargin, // مسافة ديناميكية بدل رقم ثابت
+      marginBottom: dynamicPricingMargin,
     },
     carTitle: {
       fontSize: getFontSize(14),
       fontFamily: fonts.Bold,
       color: colors.text,
       marginBottom: getSpacing(1),
-      textAlign: language === "ar" ? "right" : "left",
+      textAlign: activeLanguage === "ar" ? "right" : "left",
     },
     carSubtitle: {
       fontSize: getFontSize(10),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
-      textAlign: language === "ar" ? "right" : "left",
+      textAlign: activeLanguage === "ar" ? "right" : "left",
     },
     locationText: {
       fontSize: getFontSize(9),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
       flexShrink: 1,
-      textAlign: language === "ar" ? "right" : "left",
+      textAlign: activeLanguage === "ar" ? "right" : "left",
     },
 
     priceContainer: {
@@ -206,10 +252,10 @@ export const CarCard: React.FC<CarCardProps> = ({
       fontSize: getFontSize(8),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
-      textAlign: language === "ar" ? "right" : "left",
+      textAlign: activeLanguage === "ar" ? "right" : "left",
     },
     availabilityContainer: {
-      flexDirection: language === "ar" ? "row-reverse" : "row", // ترتيب الأيقونة حسب اللغة
+      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
       alignItems: "center",
       flexShrink: 0,
       gap: getSpacing(4),
@@ -225,7 +271,7 @@ export const CarCard: React.FC<CarCardProps> = ({
       paddingVertical: getSpacing(8),
       borderRadius: getSpacing(6),
       alignItems: "center",
-      marginTop: "auto", // يبقى الزر في الأسفل للحفاظ على التوازن
+      marginTop: "auto",
     },
     buttonDisabled: {
       backgroundColor: colors.borderDark,
@@ -241,7 +287,11 @@ export const CarCard: React.FC<CarCardProps> = ({
   });
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={handleCardPress}
+      activeOpacity={0.9}
+    >
       <View style={styles.imageContainer}>
         <Image source={{ uri: car.images[0] }} style={styles.image} />
 
@@ -254,7 +304,7 @@ export const CarCard: React.FC<CarCardProps> = ({
           {car.isNew && <Badge variant="default">{t("featured.new")}</Badge>}
           {(car.discount ?? 0) > 0 && (
             <Badge variant="secondary">
-              {language === "ar"
+              {activeLanguage === "ar"
                 ? `خصم ${car.discount}%`
                 : `${car.discount}% OFF`}
             </Badge>
@@ -293,7 +343,7 @@ export const CarCard: React.FC<CarCardProps> = ({
                 color={colors.textSecondary}
               />
               <Text style={styles.featureText}>
-                {car.specs.seats} {language === "ar" ? "مقاعد" : "seats"}
+                {car.specs.seats} {activeLanguage === "ar" ? "مقاعد" : "seats"}
               </Text>
             </View>
             <View style={styles.featureItem}>
@@ -339,7 +389,7 @@ export const CarCard: React.FC<CarCardProps> = ({
               )}
 
               <Text style={styles.perDayText}>
-                {language === "ar" ? "في اليوم" : "per day"}
+                {activeLanguage === "ar" ? "في اليوم" : "per day"}
               </Text>
             </View>
 
@@ -350,7 +400,7 @@ export const CarCard: React.FC<CarCardProps> = ({
                 color={colors.textSecondary}
               />
               <Text style={styles.availabilityText}>
-                {language === "ar" ? "متاح الآن" : "Available now"}
+                {activeLanguage === "ar" ? "متاح الآن" : "Available now"}
               </Text>
             </View>
           </View>
@@ -372,7 +422,7 @@ export const CarCard: React.FC<CarCardProps> = ({
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
