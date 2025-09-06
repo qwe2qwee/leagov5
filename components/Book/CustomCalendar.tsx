@@ -3,17 +3,16 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import Modal from "react-native-modal";
 
-// Types
 interface CalendarDate {
   date: Date;
   dateString: string;
@@ -43,7 +42,7 @@ interface CustomCalendarProps {
   onClose?: () => void;
 }
 
-// Constants
+// Bilingual month names
 const MONTHS = {
   ar: [
     "يناير",
@@ -75,16 +74,27 @@ const MONTHS = {
   ],
 };
 
+// Bilingual day abbreviations
 const DAYS = {
   ar: ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"],
   en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
 };
 
+// Rental type labels
 const RENTAL_TYPES = {
-  ar: { daily: "يومي", weekly: "أسبوعي", monthly: "شهري" },
-  en: { daily: "Daily", weekly: "Weekly", monthly: "Monthly" },
+  ar: {
+    daily: "يومي",
+    weekly: "أسبوعي",
+    monthly: "شهري",
+  },
+  en: {
+    daily: "Daily",
+    weekly: "Weekly",
+    monthly: "Monthly",
+  },
 };
 
+// Duration labels
 const DURATION_LABELS = {
   ar: {
     weekly: { 1: "أسبوع واحد", 2: "أسبوعين", 3: "3 أسابيع" },
@@ -96,409 +106,6 @@ const DURATION_LABELS = {
   },
 };
 
-// Custom Hooks
-const useCalendarLogic = (
-  selectedDate?: string,
-  rentalType: "daily" | "weekly" | "monthly" = "daily",
-  duration: number = 1,
-  onPeriodSelect?: (period: RentalPeriod) => void
-) => {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(
-    selectedDate || null
-  );
-  const [calculatedEndDate, setCalculatedEndDate] = useState<string | null>(
-    null
-  );
-  const [localRentalType, setLocalRentalType] = useState(rentalType);
-  const [localDuration, setLocalDuration] = useState(duration);
-
-  // Calculate end date when parameters change
-  useEffect(() => {
-    if (selectedStartDate && localRentalType && localDuration) {
-      const start = new Date(selectedStartDate);
-      let endDate: Date;
-
-      switch (localRentalType) {
-        case "daily":
-          endDate = new Date(start);
-          break;
-        case "weekly":
-          endDate = new Date(start);
-          endDate.setDate(start.getDate() + localDuration * 7);
-          break;
-        case "monthly":
-          endDate = new Date(start);
-          endDate.setMonth(start.getMonth() + localDuration);
-          break;
-        default:
-          endDate = new Date(start);
-      }
-
-      const endDateString = endDate.toISOString().split("T")[0];
-      setCalculatedEndDate(endDateString);
-
-      onPeriodSelect?.({
-        startDate: selectedStartDate,
-        endDate: endDateString,
-        rentalType: localRentalType,
-        duration: localDuration,
-      });
-    }
-  }, [selectedStartDate, localRentalType, localDuration, onPeriodSelect]);
-
-  const navigateMonth = useCallback((direction: "prev" | "next") => {
-    setCurrentMonth((prev) => {
-      const newMonth = new Date(prev);
-      newMonth.setMonth(prev.getMonth() + (direction === "next" ? 1 : -1));
-      return newMonth;
-    });
-  }, []);
-
-  return {
-    currentMonth,
-    selectedStartDate,
-    calculatedEndDate,
-    localRentalType,
-    localDuration,
-    setSelectedStartDate,
-    setLocalRentalType,
-    setLocalDuration,
-    navigateMonth,
-  };
-};
-
-const useCalendarHelpers = (
-  minDate: Date,
-  maxDate?: Date,
-  selectedStartDate?: string | null,
-  calculatedEndDate?: string | null
-) => {
-  const formatDate = useCallback((date: Date): CalendarDate => {
-    const dateString = date.toISOString().split("T")[0];
-    return {
-      date,
-      dateString,
-      day: date.getDate(),
-      month: date.getMonth(),
-      year: date.getFullYear(),
-      timestamp: date.getTime(),
-    };
-  }, []);
-
-  const isDateDisabled = useCallback(
-    (date: Date): boolean => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      if (date < today) return true;
-      if (minDate && date < minDate) return true;
-      if (maxDate && date > maxDate) return true;
-
-      return false;
-    },
-    [minDate, maxDate]
-  );
-
-  const isDateInRange = useCallback(
-    (date: Date): boolean => {
-      if (!selectedStartDate || !calculatedEndDate) return false;
-      const start = new Date(selectedStartDate);
-      const end = new Date(calculatedEndDate);
-      return date >= start && date <= end;
-    },
-    [selectedStartDate, calculatedEndDate]
-  );
-
-  const isStartDate = useCallback(
-    (date: Date): boolean => {
-      if (!selectedStartDate) return false;
-      return date.toISOString().split("T")[0] === selectedStartDate;
-    },
-    [selectedStartDate]
-  );
-
-  const isEndDate = useCallback(
-    (date: Date): boolean => {
-      if (!calculatedEndDate) return false;
-      return date.toISOString().split("T")[0] === calculatedEndDate;
-    },
-    [calculatedEndDate]
-  );
-
-  const isToday = useCallback((date: Date): boolean => {
-    const today = new Date();
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
-  }, []);
-
-  const generateCalendarDays = useCallback((currentMonth: Date) => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
-
-    const days: Date[] = [];
-    const current = new Date(startDate);
-
-    while (days.length < 42) {
-      days.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
-
-    return days;
-  }, []);
-
-  return {
-    formatDate,
-    isDateDisabled,
-    isDateInRange,
-    isStartDate,
-    isEndDate,
-    isToday,
-    generateCalendarDays,
-  };
-};
-
-// Components
-const CalendarHeader: React.FC<{
-  currentMonth: Date;
-  onNavigate: (direction: "prev" | "next") => void;
-  isRTL: boolean;
-  currentLanguage: "ar" | "en";
-  styles: any;
-  colors: any;
-  responsive: any;
-}> = ({
-  currentMonth,
-  onNavigate,
-  isRTL,
-  currentLanguage,
-  styles,
-  colors,
-  responsive,
-}) => (
-  <View style={styles.header}>
-    <TouchableOpacity
-      style={styles.navButton}
-      onPress={() => onNavigate(isRTL ? "next" : "prev")}
-      activeOpacity={0.7}
-    >
-      <Ionicons
-        name={isRTL ? "chevron-forward" : "chevron-back"}
-        size={responsive.getResponsiveValue(24, 26, 28, 30, 32)}
-        color={colors.text}
-      />
-    </TouchableOpacity>
-
-    <Text style={styles.monthYearText}>
-      {MONTHS[currentLanguage][currentMonth.getMonth()]}{" "}
-      {currentMonth.getFullYear()}
-    </Text>
-
-    <TouchableOpacity
-      style={styles.navButton}
-      onPress={() => onNavigate(isRTL ? "prev" : "next")}
-      activeOpacity={0.7}
-    >
-      <Ionicons
-        name={isRTL ? "chevron-back" : "chevron-forward"}
-        size={responsive.getResponsiveValue(24, 26, 28, 30, 32)}
-        color={colors.text}
-      />
-    </TouchableOpacity>
-  </View>
-);
-
-const RentalOptions: React.FC<{
-  showRentalOptions: boolean;
-  localRentalType: "daily" | "weekly" | "monthly";
-  localDuration: number;
-  onRentalTypeChange: (type: "daily" | "weekly" | "monthly") => void;
-  onDurationChange: (duration: number) => void;
-  isRTL: boolean;
-  currentLanguage: "ar" | "en";
-  styles: any;
-  t: any;
-}> = ({
-  showRentalOptions,
-  localRentalType,
-  localDuration,
-  onRentalTypeChange,
-  onDurationChange,
-  isRTL,
-  currentLanguage,
-  styles,
-  t,
-}) => {
-  if (!showRentalOptions) return null;
-
-  return (
-    <View style={styles.rentalOptionsContainer}>
-      <Text style={styles.sectionTitle}>{t.rentalType}</Text>
-      <View style={styles.optionRow}>
-        {(["daily", "weekly", "monthly"] as const).map((type) => (
-          <TouchableOpacity
-            key={type}
-            style={[
-              styles.optionButton,
-              localRentalType === type && styles.optionButtonSelected,
-            ]}
-            onPress={() => onRentalTypeChange(type)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.optionButtonText,
-                localRentalType === type && styles.optionButtonTextSelected,
-              ]}
-            >
-              {RENTAL_TYPES[currentLanguage][type]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {localRentalType !== "daily" && (
-        <>
-          <Text style={styles.sectionTitle}>{t.duration}</Text>
-          <View style={styles.optionRow}>
-            {(localRentalType === "weekly" ? [1, 2, 3] : [1, 2]).map(
-              (duration) => {
-                const getDurationLabel = () => {
-                  if (localRentalType === "weekly") {
-                    return DURATION_LABELS[currentLanguage].weekly[
-                      duration as 1 | 2 | 3
-                    ];
-                  } else {
-                    return DURATION_LABELS[currentLanguage].monthly[
-                      duration as 1 | 2
-                    ];
-                  }
-                };
-
-                return (
-                  <TouchableOpacity
-                    key={duration}
-                    style={[
-                      styles.optionButton,
-                      localDuration === duration && styles.optionButtonSelected,
-                    ]}
-                    onPress={() => onDurationChange(duration)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.optionButtonText,
-                        localDuration === duration &&
-                          styles.optionButtonTextSelected,
-                      ]}
-                    >
-                      {getDurationLabel()}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }
-            )}
-          </View>
-        </>
-      )}
-    </View>
-  );
-};
-
-const DaysHeader: React.FC<{
-  isRTL: boolean;
-  currentLanguage: "ar" | "en";
-  styles: any;
-}> = ({ isRTL, currentLanguage, styles }) => (
-  <View style={styles.daysHeader}>
-    {DAYS[currentLanguage].map((day, index) => (
-      <View key={index} style={styles.dayHeaderCell}>
-        <Text style={styles.dayHeaderText}>{day}</Text>
-      </View>
-    ))}
-  </View>
-);
-
-const CalendarGrid: React.FC<{
-  days: Date[];
-  currentMonth: Date;
-  onDatePress: (date: Date) => void;
-  helpers: any;
-  isRTL: boolean;
-  styles: any;
-}> = ({ days, currentMonth, onDatePress, helpers, isRTL, styles }) => {
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
-
-  const getDayStyles = useCallback(
-    (date: Date) => {
-      const isCurrentMonth = date.getMonth() === currentMonth.getMonth();
-      const disabled = helpers.isDateDisabled(date);
-      const inRange = helpers.isDateInRange(date);
-      const isStart = helpers.isStartDate(date);
-      const isEnd = helpers.isEndDate(date);
-      const todayDate = helpers.isToday(date);
-
-      if (disabled)
-        return {
-          container: styles.dayCellDisabled,
-          text: styles.dayTextDisabled,
-        };
-      if (isStart || isEnd)
-        return {
-          container: styles.dayCellSelected,
-          text: styles.dayTextSelected,
-        };
-      if (inRange)
-        return { container: styles.dayCellInRange, text: styles.dayText };
-      if (todayDate && isCurrentMonth)
-        return { container: styles.dayCellToday, text: styles.dayTextToday };
-      if (!isCurrentMonth)
-        return {
-          container: styles.dayCellOutside,
-          text: styles.dayTextOutside,
-        };
-
-      return { container: styles.dayCell, text: styles.dayText };
-    },
-    [currentMonth, helpers, styles]
-  );
-
-  return (
-    <View style={styles.calendarGrid}>
-      {weeks.map((week, weekIndex) => (
-        <View key={weekIndex} style={styles.weekRow}>
-          {week.map((date, dayIndex) => {
-            const disabled = helpers.isDateDisabled(date);
-            const dayStyles = getDayStyles(date);
-
-            return (
-              <TouchableOpacity
-                key={`${weekIndex}-${dayIndex}`}
-                style={dayStyles.container}
-                onPress={() => onDatePress(date)}
-                disabled={disabled}
-                activeOpacity={0.7}
-              >
-                <Text style={dayStyles.text}>{date.getDate()}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ))}
-    </View>
-  );
-};
-
-// Main Component
 const CustomCalendar: React.FC<CustomCalendarProps> = ({
   onDateSelect,
   onPeriodSelect,
@@ -516,204 +123,285 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
 
-  const {
-    currentMonth,
-    selectedStartDate,
-    calculatedEndDate,
-    localRentalType,
-    localDuration,
-    setSelectedStartDate,
-    setLocalRentalType,
-    setLocalDuration,
-    navigateMonth,
-  } = useCalendarLogic(selectedDate, rentalType, duration, onPeriodSelect);
-
-  const helpers = useCalendarHelpers(
-    minDate,
-    maxDate,
-    selectedStartDate,
-    calculatedEndDate
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(
+    selectedDate || null
   );
-
-  const t = useMemo(
-    () => ({
-      selectDate: currentLanguage === "ar" ? "اختر التاريخ" : "Select Date",
-      close: currentLanguage === "ar" ? "إغلاق" : "Close",
-      rentalType: currentLanguage === "ar" ? "نوع الإيجار:" : "Rental Type:",
-      duration: currentLanguage === "ar" ? "المدة:" : "Duration:",
-    }),
-    [currentLanguage]
+  const [calculatedEndDate, setCalculatedEndDate] = useState<string | null>(
+    null
   );
+  const [localRentalType, setLocalRentalType] = useState(rentalType);
+  const [localDuration, setLocalDuration] = useState(duration);
 
-  const days = useMemo(
-    () => helpers.generateCalendarDays(currentMonth),
-    [currentMonth, helpers]
-  );
+  // Get localized strings
+  const t = {
+    selectDate: currentLanguage === "ar" ? "اختر التاريخ" : "Select Date",
+    close: currentLanguage === "ar" ? "إغلاق" : "Close",
+    rentalType: currentLanguage === "ar" ? "نوع الإيجار:" : "Rental Type:",
+    duration: currentLanguage === "ar" ? "المدة:" : "Duration:",
+    today: currentLanguage === "ar" ? "اليوم" : "Today",
+  };
 
-  const handleDatePress = useCallback(
-    (date: Date) => {
-      if (helpers.isDateDisabled(date)) return;
+  // Calculate end date based on rental type and duration
+  useEffect(() => {
+    if (selectedStartDate && localRentalType && localDuration) {
+      const start = new Date(selectedStartDate);
+      let endDate: Date;
 
-      const formattedDate = helpers.formatDate(date);
-      setSelectedStartDate(formattedDate.dateString);
-      onDateSelect?.(formattedDate);
-    },
-    [helpers, setSelectedStartDate, onDateSelect]
-  );
+      if (localRentalType === "daily") {
+        endDate = new Date(start);
+      } else if (localRentalType === "weekly") {
+        endDate = new Date(start);
+        endDate.setDate(start.getDate() + localDuration * 7);
+      } else if (localRentalType === "monthly") {
+        endDate = new Date(start);
+        endDate.setMonth(start.getMonth() + localDuration);
+      } else {
+        endDate = new Date(start);
+      }
+
+      const endDateString = endDate.toISOString().split("T")[0];
+      setCalculatedEndDate(endDateString);
+
+      if (onPeriodSelect) {
+        onPeriodSelect({
+          startDate: selectedStartDate,
+          endDate: endDateString,
+          rentalType: localRentalType,
+          duration: localDuration,
+        });
+      }
+    }
+  }, [selectedStartDate, localRentalType, localDuration, onPeriodSelect]);
+
+  const formatDate = (date: Date): CalendarDate => {
+    const dateString = date.toISOString().split("T")[0];
+    return {
+      date,
+      dateString,
+      day: date.getDate(),
+      month: date.getMonth(),
+      year: date.getFullYear(),
+      timestamp: date.getTime(),
+    };
+  };
+
+  const isDateDisabled = (date: Date): boolean => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (date < today) return true;
+    if (minDate && date < minDate) return true;
+    if (maxDate && date > maxDate) return true;
+
+    return false;
+  };
+
+  const isDateInRange = (date: Date): boolean => {
+    if (!selectedStartDate || !calculatedEndDate) return false;
+    const start = new Date(selectedStartDate);
+    const end = new Date(calculatedEndDate);
+    return date >= start && date <= end;
+  };
+
+  const isStartDate = (date: Date): boolean => {
+    if (!selectedStartDate) return false;
+    return date.toISOString().split("T")[0] === selectedStartDate;
+  };
+
+  const isEndDate = (date: Date): boolean => {
+    if (!calculatedEndDate) return false;
+    return date.toISOString().split("T")[0] === calculatedEndDate;
+  };
+
+  const isToday = (date: Date): boolean => {
+    const today = new Date();
+    return (
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const generateCalendarDays = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const days: Date[] = [];
+    const current = new Date(startDate);
+
+    while (days.length < 42) {
+      days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+
+    return days;
+  };
+
+  const handleDatePress = (date: Date) => {
+    if (isDateDisabled(date)) return;
+
+    const formattedDate = formatDate(date);
+    setSelectedStartDate(formattedDate.dateString);
+
+    if (onDateSelect) {
+      onDateSelect(formattedDate);
+    }
+  };
+
+  const navigateMonth = (direction: "prev" | "next") => {
+    const newMonth = new Date(currentMonth);
+    if (direction === "prev") {
+      newMonth.setMonth(currentMonth.getMonth() - 1);
+    } else {
+      newMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+    setCurrentMonth(newMonth);
+  };
 
   const styles = StyleSheet.create({
+    // Modal styles
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
     modalContent: {
       backgroundColor: colors.surface,
-      borderTopLeftRadius: responsive.getResponsiveValue(24, 28, 32, 36, 40),
-      borderTopRightRadius: responsive.getResponsiveValue(24, 28, 32, 36, 40),
-      margin: 0,
-      maxHeight: "90%",
-      width: "100%",
-      borderTopWidth: 1,
-      borderLeftWidth: 1,
-      borderRightWidth: 1,
-      borderColor: colors.border,
+      borderRadius: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      margin: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      maxHeight: "85%",
+      width: Math.min(
+        responsive.width * 0.95,
+        responsive.getResponsiveValue(350, 380, 420, 460, 500)
+      ),
     },
     modalHeader: {
       flexDirection: isRTL ? "row-reverse" : "row",
       justifyContent: "space-between",
       alignItems: "center",
-      paddingHorizontal: responsive.spacing.lg,
-      paddingVertical: responsive.spacing.md,
+      padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
-      backgroundColor: colors.backgroundSecondary,
-      borderTopLeftRadius: responsive.getResponsiveValue(24, 28, 32, 36, 40),
-      borderTopRightRadius: responsive.getResponsiveValue(24, 28, 32, 36, 40),
     },
     modalTitle: {
-      fontSize: responsive.typography.h4,
+      fontSize: responsive.getFontSize(18, 17, 21),
       fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
       color: colors.text,
-      fontWeight: "600",
     },
     closeButton: {
-      fontSize: responsive.typography.body,
+      fontSize: responsive.getFontSize(16, 15, 18),
       color: colors.primary,
       fontFamily: fonts.Medium || fonts.Regular,
-      fontWeight: "500",
-      paddingHorizontal: responsive.spacing.sm,
-      paddingVertical: responsive.spacing.xs,
     },
     modalSpacer: {
-      width: responsive.getResponsiveValue(60, 70, 80, 90, 100),
+      width: responsive.getResponsiveValue(40, 50, 60, 70, 80),
     },
+
+    // Main container
     container: {
       backgroundColor: colors.surface,
-      flex: 1,
     },
     content: {
-      padding: responsive.spacing.lg,
+      padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
     },
+
+    // Header with month navigation
     header: {
       flexDirection: isRTL ? "row-reverse" : "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: responsive.spacing.xl,
-      backgroundColor: colors.backgroundSecondary,
-      borderRadius: responsive.getBorderRadius("large"),
-      paddingVertical: responsive.spacing.md,
-      paddingHorizontal: responsive.spacing.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
+      marginBottom: responsive.getResponsiveValue(20, 24, 28, 32, 36),
     },
     navButton: {
-      width: responsive.getResponsiveValue(48, 52, 56, 60, 64),
-      height: responsive.getResponsiveValue(48, 52, 56, 60, 64),
-      borderRadius: responsive.getResponsiveValue(24, 26, 28, 30, 32),
-      backgroundColor: colors.background,
+      width: responsive.getResponsiveValue(40, 44, 48, 52, 56),
+      height: responsive.getResponsiveValue(40, 44, 48, 52, 56),
+      borderRadius: responsive.getResponsiveValue(20, 22, 24, 26, 28),
+      backgroundColor: colors.backgroundSecondary,
       justifyContent: "center",
       alignItems: "center",
-      borderWidth: 1.5,
+      borderWidth: 1,
       borderColor: colors.border,
     },
     monthYearText: {
-      fontSize: responsive.typography.h3,
+      fontSize: responsive.getFontSize(20, 19, 23),
       fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
       color: colors.text,
       textAlign: "center",
-      fontWeight: "600",
-      minWidth: responsive.getResponsiveValue(160, 180, 200, 220, 240),
     },
+
+    // Rental options section
     rentalOptionsContainer: {
       backgroundColor: colors.backgroundSecondary,
-      borderRadius: responsive.getBorderRadius("large"),
-      padding: responsive.spacing.lg,
-      marginBottom: responsive.spacing.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      marginBottom: responsive.getResponsiveValue(20, 24, 28, 32, 36),
     },
     sectionTitle: {
-      fontSize: responsive.typography.body,
+      fontSize: responsive.getFontSize(16, 15, 18),
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.text,
-      marginBottom: responsive.spacing.md,
+      marginBottom: responsive.getResponsiveValue(12, 14, 16, 18, 20),
       textAlign: isRTL ? "right" : "left",
-      fontWeight: "600",
     },
     optionRow: {
       flexDirection: isRTL ? "row-reverse" : "row",
       flexWrap: "wrap",
-      gap: responsive.spacing.sm,
-      marginBottom: responsive.spacing.md,
+      gap: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      marginBottom: responsive.getResponsiveValue(12, 14, 16, 18, 20),
     },
     optionButton: {
-      paddingHorizontal: responsive.spacing.lg,
-      paddingVertical: responsive.spacing.sm,
-      borderRadius: responsive.getBorderRadius("large"),
-      borderWidth: 2,
+      paddingHorizontal: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      paddingVertical: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      borderRadius: responsive.getResponsiveValue(20, 22, 24, 26, 28),
+      borderWidth: 1.5,
       borderColor: colors.border,
       backgroundColor: colors.background,
-      minWidth: responsive.getResponsiveValue(90, 100, 110, 120, 130),
+      minWidth: responsive.getResponsiveValue(70, 80, 90, 100, 110),
     },
     optionButtonSelected: {
       backgroundColor: colors.primary,
       borderColor: colors.primary,
     },
     optionButtonText: {
-      fontSize: responsive.typography.caption,
+      fontSize: responsive.getFontSize(14, 13, 16),
       fontFamily: fonts.Medium || fonts.Regular,
       color: colors.text,
       textAlign: "center",
-      fontWeight: "500",
     },
     optionButtonTextSelected: {
       color: colors.textInverse,
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
-      fontWeight: "600",
     },
+
+    // Days header
     daysHeader: {
       flexDirection: isRTL ? "row-reverse" : "row",
-      marginBottom: responsive.spacing.md,
-      paddingHorizontal: responsive.spacing.sm,
-      backgroundColor: colors.backgroundSecondary,
-      borderRadius: responsive.getBorderRadius("medium"),
-      borderWidth: 1,
-      borderColor: colors.border,
+      marginBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      paddingHorizontal: responsive.getResponsiveValue(4, 6, 8, 10, 12),
     },
     dayHeaderCell: {
       flex: 1,
       alignItems: "center",
-      paddingVertical: responsive.spacing.md,
+      paddingVertical: responsive.getResponsiveValue(8, 10, 12, 14, 16),
     },
     dayHeaderText: {
-      fontSize: responsive.typography.caption,
+      fontSize: responsive.getFontSize(13, 12, 15),
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.textSecondary,
       textAlign: "center",
-      fontWeight: "600",
     },
+
+    // Calendar grid
     calendarGrid: {
       backgroundColor: colors.background,
-      borderRadius: responsive.getBorderRadius("large"),
-      padding: responsive.spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(8, 10, 12, 14, 16),
     },
     weekRow: {
       flexDirection: isRTL ? "row-reverse" : "row",
@@ -721,152 +409,269 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
     dayCell: {
       flex: 1,
       aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
+      margin: responsive.getResponsiveValue(2, 3, 4, 5, 6),
+      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
       justifyContent: "center",
       alignItems: "center",
       backgroundColor: "transparent",
-      borderWidth: 1,
-      borderColor: "transparent",
     },
+
+    // Day cell states
     dayCellToday: {
-      flex: 1,
-      aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
-      justifyContent: "center",
-      alignItems: "center",
       backgroundColor: colors.backgroundSecondary,
       borderWidth: 2,
       borderColor: colors.primary,
     },
     dayCellSelected: {
-      flex: 1,
-      aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
-      justifyContent: "center",
-      alignItems: "center",
       backgroundColor: colors.primary,
-      borderWidth: 1,
-      borderColor: colors.primary,
     },
     dayCellInRange: {
-      flex: 1,
-      aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: colors.backgroundSecondary,
-      borderWidth: 1,
-      borderColor: colors.primary,
-      opacity: 0.6,
+      backgroundColor: `${colors.primary}15`,
     },
     dayCellDisabled: {
-      flex: 1,
-      aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: "transparent",
-      borderWidth: 1,
-      borderColor: "transparent",
       opacity: 0.3,
     },
     dayCellOutside: {
-      flex: 1,
-      aspectRatio: 1,
-      margin: responsive.getResponsiveValue(4, 5, 6, 7, 8),
-      borderRadius: responsive.getBorderRadius("medium"),
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: "transparent",
-      borderWidth: 1,
-      borderColor: "transparent",
       opacity: 0.4,
     },
+
+    // Day text styles
     dayText: {
-      fontSize: responsive.typography.body,
+      fontSize: responsive.getFontSize(16, 15, 18),
       fontFamily: fonts.Medium || fonts.Regular,
       color: colors.text,
       textAlign: "center",
-      fontWeight: "500",
     },
     dayTextToday: {
-      fontSize: responsive.typography.body,
-      fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
       color: colors.primary,
-      textAlign: "center",
-      fontWeight: "700",
+      fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
     },
     dayTextSelected: {
-      fontSize: responsive.typography.body,
-      fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
       color: colors.textInverse,
-      textAlign: "center",
-      fontWeight: "700",
+      fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
     },
     dayTextDisabled: {
-      fontSize: responsive.typography.body,
-      fontFamily: fonts.Medium || fonts.Regular,
       color: colors.textMuted,
-      textAlign: "center",
-      fontWeight: "500",
     },
     dayTextOutside: {
-      fontSize: responsive.typography.body,
-      fontFamily: fonts.Medium || fonts.Regular,
       color: colors.textMuted,
-      textAlign: "center",
-      fontWeight: "500",
     },
+
+    // Scroll view
     scrollView: {
-      maxHeight: responsive.getResponsiveValue(450, 500, 550, 600, 650),
+      maxHeight: responsive.getResponsiveValue(400, 450, 500, 550, 600),
     },
   });
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity
+        style={styles.navButton}
+        onPress={() => navigateMonth(isRTL ? "next" : "prev")}
+      >
+        <Ionicons
+          name={isRTL ? "chevron-forward" : "chevron-back"}
+          size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
+          color={colors.text}
+        />
+      </TouchableOpacity>
+
+      <Text style={styles.monthYearText}>
+        {MONTHS[currentLanguage][currentMonth.getMonth()]}{" "}
+        {currentMonth.getFullYear()}
+      </Text>
+
+      <TouchableOpacity
+        style={styles.navButton}
+        onPress={() => navigateMonth(isRTL ? "prev" : "next")}
+      >
+        <Ionicons
+          name={isRTL ? "chevron-back" : "chevron-forward"}
+          size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
+          color={colors.text}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderRentalOptions = () => {
+    if (!showRentalOptions) return null;
+
+    return (
+      <View style={styles.rentalOptionsContainer}>
+        <Text style={styles.sectionTitle}>{t.rentalType}</Text>
+        <View style={styles.optionRow}>
+          {(["daily", "weekly", "monthly"] as const).map((type) => {
+            const isSelected = localRentalType === type;
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.optionButton,
+                  isSelected && styles.optionButtonSelected,
+                ]}
+                onPress={() => setLocalRentalType(type)}
+              >
+                <Text
+                  style={[
+                    styles.optionButtonText,
+                    isSelected && styles.optionButtonTextSelected,
+                  ]}
+                >
+                  {RENTAL_TYPES[currentLanguage][type]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {localRentalType !== "daily" && (
+          <>
+            <Text style={styles.sectionTitle}>{t.duration}</Text>
+            <View style={styles.optionRow}>
+              {localRentalType === "weekly"
+                ? [1, 2, 3].map((weeks) => {
+                    const isSelected = localDuration === weeks;
+                    return (
+                      <TouchableOpacity
+                        key={weeks}
+                        style={[
+                          styles.optionButton,
+                          isSelected && styles.optionButtonSelected,
+                        ]}
+                        onPress={() => setLocalDuration(weeks)}
+                      >
+                        <Text
+                          style={[
+                            styles.optionButtonText,
+                            isSelected && styles.optionButtonTextSelected,
+                          ]}
+                        >
+                          {
+                            DURATION_LABELS[currentLanguage].weekly[
+                              weeks as keyof typeof DURATION_LABELS.en.weekly
+                            ]
+                          }
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                : [1, 2].map((months) => {
+                    const isSelected = localDuration === months;
+                    return (
+                      <TouchableOpacity
+                        key={months}
+                        style={[
+                          styles.optionButton,
+                          isSelected && styles.optionButtonSelected,
+                        ]}
+                        onPress={() => setLocalDuration(months)}
+                      >
+                        <Text
+                          style={[
+                            styles.optionButtonText,
+                            isSelected && styles.optionButtonTextSelected,
+                          ]}
+                        >
+                          {
+                            DURATION_LABELS[currentLanguage].monthly[
+                              months as keyof typeof DURATION_LABELS.en.monthly
+                            ]
+                          }
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+            </View>
+          </>
+        )}
+      </View>
+    );
+  };
+
+  const renderDaysHeader = () => (
+    <View style={styles.daysHeader}>
+      {DAYS[currentLanguage].map((day, index) => (
+        <View key={index} style={styles.dayHeaderCell}>
+          <Text style={styles.dayHeaderText}>{day}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderCalendarGrid = () => {
+    const days = generateCalendarDays();
+    const weeks: Date[][] = [];
+
+    // Group days into weeks
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7));
+    }
+
+    return (
+      <View style={styles.calendarGrid}>
+        {weeks.map((week, weekIndex) => (
+          <View key={weekIndex} style={styles.weekRow}>
+            {week.map((date, dayIndex) => {
+              const isCurrentMonth =
+                date.getMonth() === currentMonth.getMonth();
+              const disabled = isDateDisabled(date);
+              const inRange = isDateInRange(date);
+              const isStart = isStartDate(date);
+              const isEnd = isEndDate(date);
+              const todayDate = isToday(date);
+
+              let cellStyle = [styles.dayCell];
+              let textStyle = [styles.dayText];
+
+              // Apply styles based on date state
+              if (disabled) {
+                cellStyle.push(styles.dayCellDisabled as any);
+                textStyle.push(styles.dayTextDisabled as any);
+              } else if (isStart || isEnd) {
+                cellStyle.push(styles.dayCellSelected as any);
+                textStyle.push(styles.dayTextSelected as any);
+              } else if (inRange) {
+                cellStyle.push(styles.dayCellInRange as any);
+              } else if (todayDate && isCurrentMonth) {
+                cellStyle.push(styles.dayCellToday as any);
+                textStyle.push(styles.dayTextToday as any);
+              }
+
+              if (!isCurrentMonth) {
+                cellStyle.push(styles.dayCellOutside as any);
+                textStyle.push(styles.dayTextOutside as any);
+              }
+
+              return (
+                <TouchableOpacity
+                  key={`${weekIndex}-${dayIndex}`}
+                  style={cellStyle}
+                  onPress={() => handleDatePress(date)}
+                  disabled={disabled}
+                  activeOpacity={0.7}
+                >
+                  <Text style={textStyle}>{date.getDate()}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   const content = (
     <View style={styles.container}>
       <View style={styles.content}>
-        <CalendarHeader
-          currentMonth={currentMonth}
-          onNavigate={navigateMonth}
-          isRTL={isRTL}
-          currentLanguage={currentLanguage}
-          styles={styles}
-          colors={colors}
-          responsive={responsive}
-        />
-        <RentalOptions
-          showRentalOptions={showRentalOptions}
-          localRentalType={localRentalType}
-          localDuration={localDuration}
-          onRentalTypeChange={setLocalRentalType}
-          onDurationChange={setLocalDuration}
-          isRTL={isRTL}
-          currentLanguage={currentLanguage}
-          styles={styles}
-          t={t}
-        />
-        <DaysHeader
-          isRTL={isRTL}
-          currentLanguage={currentLanguage}
-          styles={styles}
-        />
+        {renderHeader()}
+        {renderRentalOptions()}
+        {renderDaysHeader()}
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
-          <CalendarGrid
-            days={days}
-            currentMonth={currentMonth}
-            onDatePress={handleDatePress}
-            helpers={helpers}
-            isRTL={isRTL}
-            styles={styles}
-          />
+          {renderCalendarGrid()}
         </ScrollView>
       </View>
     </View>
@@ -874,50 +679,30 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
   if (visible && onClose) {
     return (
-      <Modal
-        isVisible={visible}
-        onBackdropPress={onClose}
-        onBackButtonPress={onClose}
-        animationIn="slideInUp"
-        animationOut="slideOutDown"
-        animationInTiming={300}
-        animationOutTiming={250}
-        backdropTransitionInTiming={300}
-        backdropTransitionOutTiming={250}
-        backdropOpacity={0.6}
-        backdropColor="black"
-        useNativeDriver={true}
-        hideModalContentWhileAnimating={true}
-        propagateSwipe={true}
-        swipeDirection={["down"]}
-        swipeThreshold={100}
-        onSwipeComplete={onClose}
-        style={{
-          justifyContent: "flex-end",
-          margin: 0,
-        }}
-      >
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            {isRTL ? (
-              <>
-                <View style={styles.modalSpacer} />
-                <Text style={styles.modalTitle}>{t.selectDate}</Text>
-                <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
-                  <Text style={styles.closeButton}>{t.close}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
-                  <Text style={styles.closeButton}>{t.close}</Text>
-                </TouchableOpacity>
-                <Text style={styles.modalTitle}>{t.selectDate}</Text>
-                <View style={styles.modalSpacer} />
-              </>
-            )}
+      <Modal visible={visible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              {isRTL ? (
+                <>
+                  <View style={styles.modalSpacer} />
+                  <Text style={styles.modalTitle}>{t.selectDate}</Text>
+                  <TouchableOpacity onPress={onClose}>
+                    <Text style={styles.closeButton}>{t.close}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity onPress={onClose}>
+                    <Text style={styles.closeButton}>{t.close}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.modalTitle}>{t.selectDate}</Text>
+                  <View style={styles.modalSpacer} />
+                </>
+              )}
+            </View>
+            {content}
           </View>
-          {content}
         </View>
       </Modal>
     );

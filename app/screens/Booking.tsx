@@ -712,6 +712,7 @@ const BookingScreen: React.FC = () => {
     container: {
       flex: 1,
       backgroundColor: colors.background,
+      paddingTop: responsive.safeAreaTop + 16,
     },
     scrollContainer: {
       padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
@@ -1117,7 +1118,7 @@ const BookingScreen: React.FC = () => {
         </Card>
 
         {/* Booking Form Card */}
-        <Card>
+        <Card style={{ marginBottom: responsive.safeAreaBottom + 20 }}>
           <Card.Header>
             <Card.Title size="md">{t.bookingData}</Card.Title>
           </Card.Header>
