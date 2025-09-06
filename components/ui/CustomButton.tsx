@@ -25,7 +25,7 @@ const CustomButton = ({
   ...props
 }: ButtonProps) => {
   const { colors } = useTheme();
-  const { isSmallScreen } = useResponsive();
+  const responsive = useResponsive();
   const fonts = useFontFamily();
 
   const getBgVariantStyle = (variant: ButtonProps["bgVariant"]) => {
@@ -86,12 +86,18 @@ const CustomButton = ({
   const styles = StyleSheet.create({
     button: {
       width: "100%",
-      borderRadius: 12,
-      padding: 12,
+      // Better responsive border radius that scales with screen size
+      borderRadius: responsive.getResponsiveValue(10, 12, 14, 16, 18),
+      // Improved responsive padding for better proportions
+      padding: responsive.getResponsiveValue(10, 12, 14, 16, 18),
       flexDirection: "row",
       justifyContent: "center",
       alignItems: "center",
-      minHeight: loading ? 56 : 48,
+      // Better responsive minimum height using the button height helper
+      minHeight: loading
+        ? responsive.getButtonHeight("primary") +
+          responsive.getResponsiveValue(6, 8, 10, 12, 14)
+        : responsive.getButtonHeight("primary"),
       opacity: loading || disabled ? 0.6 : 1,
       ...buttonStyle,
     },
@@ -101,13 +107,17 @@ const CustomButton = ({
       justifyContent: "center",
     },
     text: {
-      fontSize: isSmallScreen ? 16 : 18,
+      // Better responsive font size using getFontSize with proper bounds
+      fontSize: responsive.getFontSize(16, 15, 19),
       fontWeight: "bold",
       fontFamily: fonts.Bold || "System",
+      // Improved responsive line height
+      lineHeight: Math.round(responsive.getFontSize(16, 15, 19) * 1.2),
       ...textColorStyle,
     },
     iconContainer: {
-      marginHorizontal: 8,
+      // Responsive icon spacing that scales with button size
+      marginHorizontal: responsive.getResponsiveValue(6, 8, 10, 12, 14),
     },
   });
 
@@ -140,3 +150,29 @@ const CustomButton = ({
 };
 
 export default CustomButton;
+
+// Basic usage examples:
+
+// Example 1: Primary action button
+// <CustomButton
+//   title="Book Now"
+//   bgVariant="primary"
+//   onPress={() => console.log('booked')}
+// />
+
+// Example 2: Button with icon and loading state
+// <CustomButton
+//   title="Login"
+//   bgVariant="success"
+//   IconLeft={() => <LoginIcon />}
+//   loading={isLoading}
+//   onPress={handleLogin}
+// />
+
+// Example 3: Outline button for secondary actions
+// <CustomButton
+//   title="Cancel"
+//   bgVariant="outline"
+//   textVariant="primary"
+//   onPress={() => navigation.goBack()}
+// />

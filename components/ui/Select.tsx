@@ -18,7 +18,7 @@ const withOpacity = (color: string, opacity: number): string => {
   if (color.startsWith("#")) {
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
+    const b = parseInt(color.slice(7), 16);
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   }
   if (color.startsWith("rgba")) {
@@ -128,29 +128,26 @@ const SelectGroup: React.FC<{ children: React.ReactNode }> = React.memo(
   }
 );
 
-// Select Value Component
+// Select Value Component - Improved responsive typography
 const SelectValue: React.FC<SelectValueProps> = React.memo(
   ({ placeholder = "اختر خيار...", style }) => {
     const { value } = useSelectContext();
     const { colors } = useTheme();
-    const { typography } = useResponsive();
+    const responsive = useResponsive();
     const fontFamily = useFontFamily();
 
     const valueStyle: TextStyle = React.useMemo(
       () => ({
-        fontSize: typography.body,
+        // Better responsive font size
+        fontSize: responsive.getFontSize(15, 14, 17),
         fontFamily: fontFamily.Regular,
         color: value ? colors.text : colors.textSecondary,
         flex: 1,
         textAlign: "right",
+        // Improved responsive line height
+        lineHeight: Math.round(responsive.getFontSize(15, 14, 17) * 1.3),
       }),
-      [
-        typography.body,
-        fontFamily.Regular,
-        value,
-        colors.text,
-        colors.textSecondary,
-      ]
+      [responsive, fontFamily.Regular, value, colors.text, colors.textSecondary]
     );
 
     return (
@@ -161,12 +158,12 @@ const SelectValue: React.FC<SelectValueProps> = React.memo(
   }
 );
 
-// Select Trigger Component
+// Select Trigger Component - Improved responsive sizing
 const SelectTrigger: React.FC<SelectTriggerProps> = React.memo(
   ({ children, style, placeholder, disabled = false }) => {
     const { open, setOpen } = useSelectContext();
     const { colors } = useTheme();
-    const { getInputHeight, spacing, getBorderRadius } = useResponsive();
+    const responsive = useResponsive();
 
     const handlePress = React.useCallback(() => {
       if (!disabled) {
@@ -179,22 +176,23 @@ const SelectTrigger: React.FC<SelectTriggerProps> = React.memo(
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        height: getInputHeight(),
-        paddingHorizontal: spacing.md,
+        // Better responsive height using input height helper
+        height: responsive.getInputHeight(),
+        // Improved responsive horizontal padding
+        paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
         backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: open ? colors.primary : colors.border,
-        borderRadius: getBorderRadius("small"),
+        // Better responsive border radius
+        borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
         opacity: disabled ? 0.5 : 1,
       }),
       [
-        getInputHeight,
-        spacing.md,
+        responsive,
         colors.surface,
         open,
         colors.primary,
         colors.border,
-        getBorderRadius,
         disabled,
       ]
     );
@@ -209,21 +207,24 @@ const SelectTrigger: React.FC<SelectTriggerProps> = React.memo(
         {children || <SelectValue placeholder={placeholder} />}
         <Ionicons
           name={open ? "chevron-up" : "chevron-down"}
-          size={16}
+          // Responsive icon size
+          size={responsive.getResponsiveValue(14, 16, 18, 20, 22)}
           color={colors.textSecondary}
-          style={{ marginLeft: spacing.sm }}
+          style={{
+            marginLeft: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+          }}
         />
       </TouchableOpacity>
     );
   }
 );
 
-// Select Content Component
+// Select Content Component - Improved responsive sizing
 const SelectContent: React.FC<SelectContentProps> = React.memo(
   ({ children, style, position = "bottom" }) => {
     const { open, setOpen } = useSelectContext();
     const { colors } = useTheme();
-    const { spacing, getBorderRadius } = useResponsive();
+    const responsive = useResponsive();
 
     const handleClose = React.useCallback(() => {
       setOpen(false);
@@ -234,18 +235,22 @@ const SelectContent: React.FC<SelectContentProps> = React.memo(
         backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
-        borderRadius: getBorderRadius("medium"),
-        maxHeight: 300,
-        marginHorizontal: spacing.md,
+        // Better responsive border radius
+        borderRadius: responsive.getResponsiveValue(10, 12, 14, 16, 18),
+        // Responsive max height that scales with screen size
+        maxHeight: responsive.getResponsiveValue(250, 280, 320, 360, 400),
+        // Better responsive horizontal margin
+        marginHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
       }),
-      [colors.surface, colors.border, getBorderRadius, spacing.md]
+      [colors.surface, colors.border, responsive]
     );
 
     const scrollStyle: ViewStyle = React.useMemo(
       () => ({
-        padding: spacing.xs,
+        // Better responsive padding
+        padding: responsive.getResponsiveValue(4, 6, 8, 10, 12),
       }),
-      [spacing.xs]
+      [responsive]
     );
 
     return (
@@ -263,8 +268,15 @@ const SelectContent: React.FC<SelectContentProps> = React.memo(
         style={{
           justifyContent: position === "top" ? "flex-start" : "flex-end",
           margin: 0,
-          paddingTop: position === "top" ? spacing.xl : 0,
-          paddingBottom: position === "bottom" ? spacing.xl : 0,
+          // Better responsive padding for modal positioning
+          paddingTop:
+            position === "top"
+              ? responsive.getResponsiveValue(24, 32, 40, 48, 56)
+              : 0,
+          paddingBottom:
+            position === "bottom"
+              ? responsive.getResponsiveValue(24, 32, 40, 48, 56)
+              : 0,
         }}
       >
         <View style={[contentStyle, style]}>
@@ -277,31 +289,34 @@ const SelectContent: React.FC<SelectContentProps> = React.memo(
   }
 );
 
-// Select Label Component
+// Select Label Component - Improved responsive typography
 const SelectLabel: React.FC<SelectLabelProps> = React.memo(
   ({ children, style }) => {
     const { colors } = useTheme();
-    const { typography, spacing } = useResponsive();
+    const responsive = useResponsive();
     const fontFamily = useFontFamily();
 
     const labelStyle: TextStyle = React.useMemo(
       () => ({
-        fontSize: typography.caption,
+        // Better responsive font size for labels
+        fontSize: responsive.getFontSize(13, 12, 15),
         fontFamily:
           fontFamily.SemiBold || fontFamily.Bold || fontFamily.Regular,
         color: colors.textSecondary,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        // Better responsive horizontal padding
+        paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+        // Better responsive vertical padding
+        paddingVertical: responsive.getResponsiveValue(6, 8, 10, 12, 14),
         textAlign: "right",
+        // Improved responsive line height
+        lineHeight: Math.round(responsive.getFontSize(13, 12, 15) * 1.3),
       }),
       [
-        typography.caption,
+        responsive,
         fontFamily.SemiBold,
         fontFamily.Bold,
         fontFamily.Regular,
         colors.textSecondary,
-        spacing.md,
-        spacing.sm,
       ]
     );
 
@@ -309,12 +324,12 @@ const SelectLabel: React.FC<SelectLabelProps> = React.memo(
   }
 );
 
-// Select Item Component
+// Select Item Component - Improved responsive sizing
 const SelectItem: React.FC<SelectItemProps> = React.memo(
   ({ value, children, disabled = false, style }) => {
     const { value: selectedValue, onValueChange, setOpen } = useSelectContext();
     const { colors } = useTheme();
-    const { spacing, getBorderRadius, typography } = useResponsive();
+    const responsive = useResponsive();
     const fontFamily = useFontFamily();
 
     const isSelected = selectedValue === value;
@@ -330,40 +345,34 @@ const SelectItem: React.FC<SelectItemProps> = React.memo(
       () => ({
         flexDirection: "row",
         alignItems: "center",
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.md,
+        // Better responsive vertical padding
+        paddingVertical: responsive.getResponsiveValue(10, 12, 16, 18, 20),
+        // Better responsive horizontal padding
+        paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
         backgroundColor: isSelected
           ? withOpacity(colors.primary, 0.1)
           : "transparent",
-        borderRadius: getBorderRadius("small"),
-        marginVertical: spacing.xs,
+        // Better responsive border radius
+        borderRadius: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+        // Better responsive vertical margin
+        marginVertical: responsive.getResponsiveValue(2, 3, 4, 5, 6),
         opacity: disabled ? 0.5 : 1,
       }),
-      [
-        spacing.md,
-        spacing.xs,
-        isSelected,
-        colors.primary,
-        getBorderRadius,
-        disabled,
-      ]
+      [responsive, isSelected, colors.primary, disabled]
     );
 
     const textStyle: TextStyle = React.useMemo(
       () => ({
         flex: 1,
-        fontSize: typography.body,
+        // Better responsive font size for items
+        fontSize: responsive.getFontSize(15, 14, 17),
         fontFamily: fontFamily.Regular,
         color: isSelected ? colors.primary : colors.text,
         textAlign: "right",
+        // Improved responsive line height
+        lineHeight: Math.round(responsive.getFontSize(15, 14, 17) * 1.3),
       }),
-      [
-        typography.body,
-        fontFamily.Regular,
-        isSelected,
-        colors.primary,
-        colors.text,
-      ]
+      [responsive, fontFamily.Regular, isSelected, colors.primary, colors.text]
     );
 
     return (
@@ -377,9 +386,12 @@ const SelectItem: React.FC<SelectItemProps> = React.memo(
         {isSelected && (
           <Ionicons
             name="checkmark"
-            size={16}
+            // Responsive checkmark icon size
+            size={responsive.getResponsiveValue(14, 16, 18, 20, 22)}
             color={colors.primary}
-            style={{ marginRight: spacing.sm }}
+            style={{
+              marginRight: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+            }}
           />
         )}
       </TouchableOpacity>
@@ -387,20 +399,22 @@ const SelectItem: React.FC<SelectItemProps> = React.memo(
   }
 );
 
-// Select Separator Component
+// Select Separator Component - Improved responsive sizing
 const SelectSeparator: React.FC<SelectSeparatorProps> = React.memo(
   ({ style }) => {
     const { colors } = useTheme();
-    const { spacing } = useResponsive();
+    const responsive = useResponsive();
 
     const separatorStyle: ViewStyle = React.useMemo(
       () => ({
         height: 1,
         backgroundColor: colors.border,
-        marginVertical: spacing.xs,
-        marginHorizontal: spacing.sm,
+        // Better responsive vertical margin
+        marginVertical: responsive.getResponsiveValue(3, 4, 5, 6, 7),
+        // Better responsive horizontal margin
+        marginHorizontal: responsive.getResponsiveValue(8, 10, 12, 14, 16),
       }),
-      [colors.border, spacing.xs, spacing.sm]
+      [colors.border, responsive]
     );
 
     return <View style={[separatorStyle, style]} />;
@@ -440,3 +454,39 @@ export {
 };
 
 export default SelectWithComponents;
+
+// Basic usage examples:
+
+// Example 1: Simple car type selector
+// <Select value={carType} onValueChange={setCarType}>
+//   <Select.Trigger placeholder="Select car type" />
+//   <Select.Content>
+//     <Select.Item value="economy">Economy</Select.Item>
+//     <Select.Item value="standard">Standard</Select.Item>
+//     <Select.Item value="luxury">Luxury</Select.Item>
+//   </Select.Content>
+// </Select>
+
+// Example 2: Location selector with groups
+// <Select value={location} onValueChange={setLocation}>
+//   <Select.Trigger placeholder="Pick up location" />
+//   <Select.Content>
+//     <Select.Label>Popular Locations</Select.Label>
+//     <Select.Item value="airport">Airport</Select.Item>
+//     <Select.Item value="downtown">Downtown</Select.Item>
+//     <Select.Separator />
+//     <Select.Label>All Locations</Select.Label>
+//     <Select.Item value="suburb1">Suburb Area 1</Select.Item>
+//     <Select.Item value="suburb2">Suburb Area 2</Select.Item>
+//   </Select.Content>
+// </Select>
+
+// Example 3: Fuel type selector
+// <Select value={fuelType} onValueChange={setFuelType}>
+//   <Select.Trigger placeholder="Fuel preference" />
+//   <Select.Content position="top">
+//     <Select.Item value="gasoline">Gasoline</Select.Item>
+//     <Select.Item value="electric">Electric</Select.Item>
+//     <Select.Item value="hybrid">Hybrid</Select.Item>
+//   </Select.Content>
+// </Select>

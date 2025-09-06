@@ -161,32 +161,39 @@ const getBadgeVariants = (
   return variants[variant];
 };
 
-// Badge Size Configuration
+// Badge Size Configuration - Improved with responsive sizing
 const getBadgeSize = (
   size: BadgeSize,
   responsive: ReturnType<typeof useResponsive>
 ) => {
   const sizes = {
     sm: {
-      paddingHorizontal: responsive.spacing.sm,
-      paddingVertical: responsive.spacing.xs / 2,
-      fontSize: responsive.typography.small,
-      borderRadius: responsive.getBorderRadius("small") * 2, // More rounded
-      minHeight: 20,
+      // More responsive horizontal padding that scales better on small screens
+      paddingHorizontal: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      // Responsive vertical padding with better proportions
+      paddingVertical: responsive.getResponsiveValue(2, 3, 4, 5, 6),
+      // Use responsive font sizing for better scaling
+      fontSize: responsive.getFontSize(11, 10, 13),
+      // Better responsive border radius
+      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      // Responsive minimum height that scales with screen size
+      minHeight: responsive.getResponsiveValue(18, 20, 22, 24, 26),
     },
     md: {
-      paddingHorizontal: responsive.spacing.md,
-      paddingVertical: responsive.spacing.xs,
-      fontSize: responsive.typography.caption,
-      borderRadius: responsive.getBorderRadius("medium"),
-      minHeight: 24,
+      // Better scaling for medium badges
+      paddingHorizontal: responsive.getResponsiveValue(10, 12, 16, 18, 20),
+      paddingVertical: responsive.getResponsiveValue(4, 5, 6, 7, 8),
+      fontSize: responsive.getFontSize(13, 12, 15),
+      borderRadius: responsive.getResponsiveValue(10, 12, 14, 16, 18),
+      minHeight: responsive.getResponsiveValue(22, 24, 26, 28, 30),
     },
     lg: {
-      paddingHorizontal: responsive.spacing.lg,
-      paddingVertical: responsive.spacing.sm,
-      fontSize: responsive.typography.body,
-      borderRadius: responsive.getBorderRadius("medium"),
-      minHeight: 32,
+      // Large badges with optimal spacing for all screen sizes
+      paddingHorizontal: responsive.getResponsiveValue(14, 16, 20, 24, 28),
+      paddingVertical: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      fontSize: responsive.getFontSize(15, 14, 17),
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      minHeight: responsive.getResponsiveValue(28, 32, 36, 40, 44),
     },
   };
 
@@ -236,10 +243,12 @@ const Badge = React.forwardRef<any, BadgeProps>(
       fontSize: sizeConfig.fontSize,
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       textAlign: "center",
-      lineHeight: sizeConfig.fontSize * 1.2,
+      // Improved responsive line height calculation
+      lineHeight: Math.round(sizeConfig.fontSize * 1.3),
     };
 
-    const iconSpacing = responsive.spacing.xs;
+    // Responsive icon spacing that scales with badge size
+    const iconSpacing = responsive.getResponsiveValue(3, 4, 5, 6, 7);
 
     // If onPress is provided, use TouchableOpacity, otherwise use View
     const Component = onPress ? TouchableOpacity : View;
@@ -278,3 +287,18 @@ Badge.displayName = "Badge";
 export type { BadgeSize, BadgeVariant };
 
 export { Badge };
+
+// Basic usage examples:
+
+// Example 1: Simple status badge
+// <Badge variant="success" size="sm">Available</Badge>
+
+// Example 2: Interactive badge with icon
+// <Badge variant="premium" size="md" onPress={() => console.log('pressed')}>
+//   Premium Car
+// </Badge>
+
+// Example 3: Car rental category badge
+// <Badge variant="luxury" size="lg" icon={<StarIcon />} iconPosition="left">
+//   Luxury Vehicle
+// </Badge>

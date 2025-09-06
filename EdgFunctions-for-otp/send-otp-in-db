@@ -1,0 +1,385 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Enhanced CORS headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-requested-with, accept",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+};
+// Environment variables
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const AUTHENTICA_API_KEY =
+  "$2y$10$P7V123TDwDF5bGBqP3D3f.LXr8NyXfu5Vo6CAilmL66tHS9w6jPPq";
+const NODE_ENV = Deno.env.get("NODE_ENV") || "production";
+// Validate environment variables
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !AUTHENTICA_API_KEY) {
+  const missing = [];
+  if (!SUPABASE_URL) missing.push("SUPABASE_URL");
+  if (!SUPABASE_SERVICE_KEY) missing.push("SUPABASE_SERVICE_KEY");
+  if (!AUTHENTICA_API_KEY) missing.push("");
+  console.error("❌ Missing environment variables:", missing);
+  if (NODE_ENV !== "production") {
+    throw new Error(`Missing: ${missing.join(", ")}`);
+  }
+}
+// Initialize Supabase
+let supabase;
+try {
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  console.log("✅ Supabase initialized");
+} catch (error) {
+  console.error("❌ Supabase init failed:", error);
+}
+// Configuration
+const CONFIG = {
+  RATE_LIMIT_WINDOW: 15 * 60 * 1000,
+  MAX_ATTEMPTS: 5,
+  OTP_EXPIRY: 5 * 60 * 1000,
+  REQUEST_TIMEOUT: 30000,
+};
+// Phone validation for Saudi numbers
+function normalizePhoneNumber(phone) {
+  try {
+    if (!phone || typeof phone !== "string" || phone.length > 20) {
+      return {
+        normalized: "",
+        isValid: false,
+        error: "Invalid phone number format",
+      };
+    }
+    let normalized = phone.replace(/[^\d+]/g, "");
+    if (normalized.startsWith("+966")) {
+      // Already correct
+    } else if (normalized.startsWith("00966")) {
+      normalized = "+" + normalized.substring(2);
+    } else if (normalized.startsWith("966")) {
+      normalized = "+" + normalized;
+    } else if (normalized.startsWith("0")) {
+      normalized = "+966" + normalized.substring(1);
+    } else if (normalized.startsWith("5")) {
+      normalized = "+966" + normalized;
+    } else {
+      return {
+        normalized: "",
+        isValid: false,
+        error: "Invalid Saudi phone format",
+      };
+    }
+    // Validate Saudi mobile pattern
+    const saudiRegex = /^\+966(5[0|3-9])(\d{7})$/;
+    const match = normalized.match(saudiRegex);
+    if (!match) {
+      return {
+        normalized: "",
+        isValid: false,
+        error: "Invalid Saudi mobile number",
+      };
+    }
+    // Determine carrier
+    const prefix = match[1];
+    let carrier = "Unknown";
+    switch (prefix) {
+      case "50":
+      case "53":
+      case "55":
+      case "57":
+        carrier = "STC";
+        break;
+      case "54":
+      case "56":
+        carrier = "Mobily";
+        break;
+      case "58":
+      case "59":
+        carrier = "Zain";
+        break;
+    }
+    return {
+      normalized,
+      isValid: true,
+      carrier,
+    };
+  } catch (error) {
+    return {
+      normalized: "",
+      isValid: false,
+      error: "Phone validation failed",
+    };
+  }
+}
+// Generate session ID
+function generateSessionId() {
+  const timestamp = Date.now();
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  const randomHex = Array.from(random, (b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+  return `auth_${timestamp}_${randomHex}`;
+}
+// Error response helper
+function createErrorResponse(error, status = 400) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error,
+      timestamp: new Date().toISOString(),
+    }),
+    {
+      status,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+// Success response helper
+function createSuccessResponse(data) {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      timestamp: new Date().toISOString(),
+      ...data,
+    }),
+    {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+// Fetch with timeout
+async function fetchWithTimeout(
+  url,
+  options,
+  timeout = CONFIG.REQUEST_TIMEOUT
+) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error.name === "AbortError" ? new Error("Request timeout") : error;
+  }
+}
+// Get client IP
+function getClientIP(request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("cf-connecting-ip") ||
+    "unknown"
+  );
+}
+serve(async (req) => {
+  // Handle CORS
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders,
+    });
+  }
+  if (req.method !== "POST") {
+    return createErrorResponse("Method not allowed", 405);
+  }
+  const clientIP = getClientIP(req);
+  const userAgent = req.headers.get("user-agent") || "unknown";
+  console.log(`📥 Request from IP: ${clientIP.substring(0, 8)}...`);
+  try {
+    // Parse request body
+    let body;
+    try {
+      const text = await req.text();
+      if (!text.trim()) return createErrorResponse("Empty request body");
+      body = JSON.parse(text);
+    } catch {
+      return createErrorResponse("Invalid JSON");
+    }
+    const { phone } = body;
+    if (!phone || typeof phone !== "string") {
+      return createErrorResponse("Phone number is required");
+    }
+    console.log(`📱 Processing phone: ...${phone.slice(-4)}`);
+    // Validate phone
+    const phoneValidation = normalizePhoneNumber(phone);
+    if (!phoneValidation.isValid) {
+      return createErrorResponse(phoneValidation.error);
+    }
+    const { normalized: normalizedPhone, carrier } = phoneValidation;
+    console.log(`✅ Validated ${carrier} number`);
+    // SIMPLIFIED rate limiting - check only basic recent attempts
+    console.log("🔍 Checking rate limits...");
+    try {
+      const rateLimitStart = new Date(
+        Date.now() - CONFIG.RATE_LIMIT_WINDOW
+      ).toISOString();
+      // Simple query first - just check if table exists and basic structure
+      const { data: recentAttempts, error: rateLimitError } = await supabase
+        .from("otp_requests")
+        .select("id, phone, created_at")
+        .eq("phone", normalizedPhone)
+        .gte("created_at", rateLimitStart)
+        .order("created_at", {
+          ascending: false,
+        });
+      if (rateLimitError) {
+        console.error("❌ Rate limit check failed:", rateLimitError);
+        // Don't fail the request, just log and continue
+        console.warn("⚠️ Proceeding without rate limit check");
+      } else {
+        const attemptCount = recentAttempts?.length || 0;
+        console.log(`📊 Found ${attemptCount} recent attempts`);
+        if (attemptCount >= CONFIG.MAX_ATTEMPTS) {
+          const remainingMinutes = Math.ceil(CONFIG.RATE_LIMIT_WINDOW / 60000);
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `Too many requests. Wait ${remainingMinutes} minutes.`,
+              retry_after: Math.ceil(CONFIG.RATE_LIMIT_WINDOW / 1000),
+            }),
+            {
+              status: 429,
+              headers: {
+                ...corsHeaders,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        }
+      }
+    } catch (dbError) {
+      console.error("❌ Database error during rate limiting:", dbError);
+      console.warn("⚠️ Continuing without rate limit check");
+    }
+    // Generate session
+    const sessionId = generateSessionId();
+    console.log(`🔑 Session: ${sessionId.substring(0, 20)}...`);
+    // Call Authentica API
+    console.log("📤 Calling Authentica API...");
+    const authenticaPayload = {
+      method: "sms",
+      phone: normalizedPhone,
+      template_id: 1,
+    };
+    let authenticaResponse;
+    try {
+      authenticaResponse = await fetchWithTimeout(
+        "https://api.authentica.sa/api/v2/send-otp",
+        {
+          method: "POST",
+          headers: {
+            "X-Authorization": AUTHENTICA_API_KEY,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(authenticaPayload),
+        }
+      );
+    } catch (fetchError) {
+      console.error("❌ Authentica API failed:", fetchError);
+      return createErrorResponse("SMS service unavailable", 502);
+    }
+    console.log(`📡 Authentica status: ${authenticaResponse.status}`);
+    // Parse Authentica response
+    let authenticaData;
+    try {
+      authenticaData = await authenticaResponse.json();
+    } catch {
+      return createErrorResponse("Invalid SMS service response", 502);
+    }
+    if (!authenticaResponse.ok) {
+      console.error("❌ Authentica error:", authenticaData);
+      const errorMsg = authenticaData.message || "SMS sending failed";
+      return createErrorResponse(errorMsg);
+    }
+    console.log("✅ OTP sent successfully");
+    // Store request in database (with error handling)
+    try {
+      const otpData = {
+        phone: normalizedPhone,
+        authentica_session_id: sessionId,
+        status: "pending",
+        expires_at: new Date(Date.now() + CONFIG.OTP_EXPIRY).toISOString(),
+        created_at: new Date().toISOString(),
+        // Only add these fields if they exist in your table
+        ...(carrier && {
+          carrier,
+        }),
+      };
+      // Try with minimal required fields first
+      const { data: otpRequest, error: otpError } = await supabase
+        .from("otp_requests")
+        .insert([otpData])
+        .select("id")
+        .single();
+      if (otpError) {
+        console.error("❌ Failed to store OTP request:", otpError);
+        console.warn("⚠️ OTP was sent but not logged to database");
+      } else {
+        console.log(`💾 Stored OTP request: ${otpRequest.id}`);
+      }
+    } catch (dbError) {
+      console.error("❌ Database storage error:", dbError);
+      console.warn("⚠️ OTP sent successfully but storage failed");
+    }
+    // Try to update profile (optional)
+    try {
+      await supabase.from("profiles").upsert(
+        {
+          phone: normalizedPhone,
+          otp_last_sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...(carrier && {
+            carrier,
+          }),
+        },
+        {
+          onConflict: "phone",
+        }
+      );
+    } catch (profileError) {
+      console.warn("⚠️ Profile update failed (non-critical):", profileError);
+    }
+    // Success response
+    const responseData = {
+      message: authenticaData.message || "OTP sent successfully",
+      session_id: sessionId,
+      phone: normalizedPhone,
+      expires_in: Math.ceil(CONFIG.OTP_EXPIRY / 1000),
+      expires_at: new Date(Date.now() + CONFIG.OTP_EXPIRY).toISOString(),
+      ...(carrier && {
+        carrier,
+      }),
+    };
+    console.log("✅ Request completed successfully");
+    return createSuccessResponse(responseData);
+  } catch (error) {
+    console.error("❌ Unexpected error:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Internal server error",
+        timestamp: new Date().toISOString(),
+        ...(NODE_ENV === "development" && {
+          debug: error.message,
+        }),
+      }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+});

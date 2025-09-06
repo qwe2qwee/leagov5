@@ -92,7 +92,7 @@ const useCardTheme = (type: CardType) => {
   }, [colors, type]);
 };
 
-// Main Card Component
+// Main Card Component - Improved responsive sizing
 const Card = React.memo(
   React.forwardRef<View, CardProps>(
     (
@@ -100,17 +100,18 @@ const Card = React.memo(
       ref
     ) => {
       const { cardStyle } = useCardTheme(type);
-      const { getBorderRadius } = useResponsive();
+      const responsive = useResponsive();
 
       const baseCardStyle: ViewStyle = React.useMemo(
         () => ({
-          borderRadius: getBorderRadius("medium"),
+          // Better responsive border radius that scales with screen size
+          borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
           borderWidth: 1,
           overflow: "hidden",
           ...cardStyle,
           // No shadows - completely removed shadow properties
         }),
-        [cardStyle, getBorderRadius]
+        [cardStyle, responsive]
       );
 
       return (
@@ -122,19 +123,22 @@ const Card = React.memo(
   )
 );
 
-// Card Header Component
+// Card Header Component - Improved responsive padding
 const CardHeader = React.memo(
   React.forwardRef<View, CardHeaderProps>(
     ({ children, style, ...props }, ref) => {
-      const { spacing } = useResponsive();
+      const responsive = useResponsive();
 
       const headerStyle: ViewStyle = React.useMemo(
         () => ({
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.lg,
-          paddingBottom: spacing.sm,
+          // Better responsive horizontal padding
+          paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+          // Better responsive top padding
+          paddingTop: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+          // Better responsive bottom padding
+          paddingBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
         }),
-        [spacing]
+        [responsive]
       );
 
       return (
@@ -146,31 +150,33 @@ const CardHeader = React.memo(
   )
 );
 
-// Card Title Component
+// Card Title Component - Improved responsive typography
 const CardTitle = React.memo(
   React.forwardRef<Text, CardTitleProps>(
     ({ children, style, size = "md", ...props }, ref) => {
       const { colors } = useTheme();
-      const { typography } = useResponsive();
+      const responsive = useResponsive();
       const fontFamily = useFontFamily();
 
       const titleStyle: TextStyle = React.useMemo(() => {
+        // Improved responsive font sizes with better scaling
         const sizeStyles = {
-          sm: { fontSize: typography.h4 },
-          md: { fontSize: typography.h3 },
-          lg: { fontSize: typography.h2 },
+          sm: { fontSize: responsive.getFontSize(16, 15, 19) },
+          md: { fontSize: responsive.getFontSize(18, 17, 22) },
+          lg: { fontSize: responsive.getFontSize(22, 20, 26) },
         };
 
         return {
           color: colors.text,
           fontFamily:
             fontFamily.SemiBold || fontFamily.Bold || fontFamily.Regular,
-          lineHeight: sizeStyles[size].fontSize * 1.2,
+          lineHeight: Math.round(sizeStyles[size].fontSize * 1.3),
           letterSpacing: -0.5,
-          marginBottom: 4,
+          // Responsive margin bottom
+          marginBottom: responsive.getResponsiveValue(3, 4, 5, 6, 7),
           ...sizeStyles[size],
         };
-      }, [colors.text, typography, fontFamily, size]);
+      }, [colors.text, responsive, fontFamily, size]);
 
       return (
         <Text ref={ref} style={[titleStyle, style]} {...props}>
@@ -181,23 +187,26 @@ const CardTitle = React.memo(
   )
 );
 
-// Card Description Component
+// Card Description Component - Improved responsive typography
 const CardDescription = React.memo(
   React.forwardRef<Text, CardDescriptionProps>(
     ({ children, style, ...props }, ref) => {
       const { colors } = useTheme();
-      const { typography } = useResponsive();
+      const responsive = useResponsive();
       const fontFamily = useFontFamily();
 
       const descriptionStyle: TextStyle = React.useMemo(
         () => ({
           color: colors.textSecondary,
-          fontSize: typography.body,
+          // Better responsive font size for descriptions
+          fontSize: responsive.getFontSize(14, 13, 16),
           fontFamily: fontFamily.Regular,
-          lineHeight: typography.body * 1.4,
-          marginBottom: 2,
+          // Improved responsive line height
+          lineHeight: Math.round(responsive.getFontSize(14, 13, 16) * 1.4),
+          // Responsive margin bottom
+          marginBottom: responsive.getResponsiveValue(1, 2, 3, 4, 5),
         }),
-        [colors.textSecondary, typography, fontFamily]
+        [colors.textSecondary, responsive, fontFamily]
       );
 
       return (
@@ -209,18 +218,20 @@ const CardDescription = React.memo(
   )
 );
 
-// Card Content Component
+// Card Content Component - Improved responsive padding
 const CardContent = React.memo(
   React.forwardRef<View, CardContentProps>(
     ({ children, style, ...props }, ref) => {
-      const { spacing } = useResponsive();
+      const responsive = useResponsive();
 
       const contentStyle: ViewStyle = React.useMemo(
         () => ({
-          paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.md,
+          // Better responsive horizontal padding
+          paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+          // Better responsive bottom padding
+          paddingBottom: responsive.getResponsiveValue(10, 12, 16, 18, 20),
         }),
-        [spacing]
+        [responsive]
       );
 
       return (
@@ -232,22 +243,25 @@ const CardContent = React.memo(
   )
 );
 
-// Card Footer Component
+// Card Footer Component - Improved responsive padding
 const CardFooter = React.memo(
   React.forwardRef<View, CardFooterProps>(
     ({ children, style, justify = "flex-start", ...props }, ref) => {
-      const { spacing } = useResponsive();
+      const responsive = useResponsive();
 
       const footerStyle: ViewStyle = React.useMemo(
         () => ({
           flexDirection: "row",
           alignItems: "center",
           justifyContent: justify,
-          paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.lg,
-          paddingTop: spacing.sm,
+          // Better responsive horizontal padding
+          paddingHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+          // Better responsive bottom padding
+          paddingBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+          // Better responsive top padding
+          paddingTop: responsive.getResponsiveValue(6, 8, 10, 12, 14),
         }),
-        [spacing, justify]
+        [responsive, justify]
       );
 
       return (
@@ -293,3 +307,41 @@ export {
 
 // Export individual components for flexibility
 export default CardWithComponents;
+
+// Basic usage examples:
+
+// Example 1: Simple product card
+// <Card type="default">
+//   <Card.Header>
+//     <Card.Title size="md">Tesla Model 3</Card.Title>
+//     <Card.Description>Electric Vehicle</Card.Description>
+//   </Card.Header>
+//   <Card.Content>
+//     <Text>Premium electric sedan with autopilot capabilities</Text>
+//   </Card.Content>
+// </Card>
+
+// Example 2: Car rental booking card
+// <Card type="primary">
+//   <Card.Header>
+//     <Card.Title size="lg">BMW X5</Card.Title>
+//     <Card.Description>Luxury SUV</Card.Description>
+//   </Card.Header>
+//   <Card.Content>
+//     <Text>Available for booking from $120/day</Text>
+//   </Card.Content>
+//   <Card.Footer justify="space-between">
+//     <Button variant="outline">Details</Button>
+//     <Button variant="primary">Book Now</Button>
+//   </Card.Footer>
+// </Card>
+
+// Example 3: Status card with warning
+// <Card type="warning">
+//   <Card.Header>
+//     <Card.Title size="sm">Maintenance Required</Card.Title>
+//   </Card.Header>
+//   <Card.Content>
+//     <Text>Vehicle needs service before next rental</Text>
+//   </Card.Content>
+// </Card>

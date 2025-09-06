@@ -307,19 +307,25 @@ const Calendar = React.forwardRef<View, CalendarProps>(
       container: {
         backgroundColor: theme.colors.surface,
         borderRadius: responsive.getBorderRadius("medium"),
-        padding: responsive.spacing.lg,
+        // Improved responsive padding that scales better on all phone sizes
+        padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),
         borderWidth: 1,
         borderColor: theme.colors.border,
+        // Ensure calendar has good max width on larger phones
+        maxWidth: responsive.getResponsiveValue(320, 360, 400, 440, 480),
+        alignSelf: "center",
       },
       header: {
         flexDirection: isRTL ? "row-reverse" : "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: responsive.spacing.lg,
-        paddingHorizontal: responsive.spacing.sm,
+        // Better responsive margin for header spacing
+        marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+        // Responsive horizontal padding for better button positioning
+        paddingHorizontal: responsive.getResponsiveValue(4, 6, 8, 10, 12),
       },
       monthYear: {
-        fontSize: responsive.typography.h3,
+        fontSize: responsive.getFontSize(18, 16, 22),
         fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
         color: theme.colors.text,
         textAlign: "center",
@@ -327,9 +333,10 @@ const Calendar = React.forwardRef<View, CalendarProps>(
         writingDirection: language === "ar" ? "rtl" : "ltr",
       },
       navButton: {
-        width: responsive.getResponsiveValue(44, 48, 52, 56),
-        height: responsive.getResponsiveValue(44, 48, 52, 56),
-        borderRadius: responsive.getBorderRadius("medium"),
+        // Better responsive sizing for navigation buttons with proper touch targets
+        width: responsive.getResponsiveValue(40, 44, 48, 52, 56),
+        height: responsive.getResponsiveValue(40, 44, 48, 52, 56),
+        borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
         backgroundColor: theme.colors.backgroundSecondary,
         borderWidth: 1,
         borderColor: theme.colors.border,
@@ -338,15 +345,17 @@ const Calendar = React.forwardRef<View, CalendarProps>(
       },
       weekHeader: {
         flexDirection: isRTL ? "row-reverse" : "row",
-        marginBottom: responsive.spacing.md,
+        // Better responsive margin for week header
+        marginBottom: responsive.getResponsiveValue(8, 12, 16, 18, 20),
       },
       weekDay: {
         flex: 1,
         alignItems: "center",
-        paddingVertical: responsive.spacing.sm,
+        // Responsive vertical padding for week day headers
+        paddingVertical: responsive.getResponsiveValue(6, 8, 10, 12, 14),
       },
       weekDayText: {
-        fontSize: responsive.typography.caption,
+        fontSize: responsive.getFontSize(12, 11, 14),
         fontFamily: fonts.Medium || fonts.Regular,
         color: theme.colors.textSecondary,
         textAlign: "center",
@@ -361,12 +370,14 @@ const Calendar = React.forwardRef<View, CalendarProps>(
         aspectRatio: 1,
         justifyContent: "center",
         alignItems: "center",
-        borderRadius: responsive.getBorderRadius("small"),
-        marginVertical: 2,
-        minHeight: responsive.getResponsiveValue(40, 44, 48, 52),
+        borderRadius: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+        // Better responsive vertical margin for day cells
+        marginVertical: responsive.getResponsiveValue(1, 2, 3, 4, 5),
+        // Improved minimum height with better touch targets
+        minHeight: responsive.getResponsiveValue(36, 40, 44, 48, 52),
       },
       dayText: {
-        fontSize: responsive.typography.body,
+        fontSize: responsive.getFontSize(14, 13, 16),
         fontFamily: fonts.Regular,
         color: theme.colors.text,
         textAlign: "center",
@@ -418,7 +429,7 @@ const Calendar = React.forwardRef<View, CalendarProps>(
           >
             <Ionicons
               name={isRTL ? "chevron-forward" : "chevron-back"}
-              size={responsive.getIconSize("medium")}
+              size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
               color={theme.colors.text}
             />
           </TouchableOpacity>
@@ -433,7 +444,7 @@ const Calendar = React.forwardRef<View, CalendarProps>(
           >
             <Ionicons
               name={isRTL ? "chevron-back" : "chevron-forward"}
-              size={responsive.getIconSize("medium")}
+              size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
               color={theme.colors.text}
             />
           </TouchableOpacity>
@@ -458,3 +469,22 @@ const Calendar = React.forwardRef<View, CalendarProps>(
 Calendar.displayName = "Calendar";
 
 export { Calendar };
+
+// Basic usage examples:
+
+// Example 1: Simple date picker
+// <Calendar mode="single" onSelect={(date) => console.log(date)} />
+
+// Example 2: Date range picker for hotel booking
+// <Calendar
+//   mode="range"
+//   onSelect={(range) => console.log(range)}
+//   disabled={(date) => date < new Date()}
+// />
+
+// Example 3: Multiple date selection for availability
+// <Calendar
+//   mode="multiple"
+//   onSelect={(dates) => console.log(dates)}
+//   showOutsideDays={false}
+// />
