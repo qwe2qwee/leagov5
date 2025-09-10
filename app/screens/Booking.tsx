@@ -1,51 +1,37 @@
-import CustomCalendar from "@/components/Book/CustomCalendar";
-import { Badge } from "@/components/ui/Badge2";
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
+// Import custom components
+
+import BookingButton from "@/components/booking/BookingButton";
+import BookingCalendarModal from "@/components/booking/BookingCalendarModal";
+import BookingCarInfo from "@/components/booking/BookingCarInfo";
+import BookingForm from "@/components/booking/BookingForm";
+import BookingHeader from "@/components/booking/BookingHeader";
+import BookingSummary from "@/components/booking/BookingSummary";
 import { Card } from "@/components/ui/Card";
 import CustomButton from "@/components/ui/CustomButton";
-import { Select } from "@/components/ui/Select";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
 import useLanguageStore from "@/store/useLanguageStore";
-import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useSafeNavigate } from "@/utils/useSafeNavigate";
 
 interface BookingFormData {
   startDate: string;
   endDate: string;
   rentalType: "daily" | "weekly" | "monthly";
   duration: number;
-}
-
-interface Branch {
-  id: string;
-  name_ar: string;
-  name_en: string;
-  location: {
-    lat: number;
-    lng: number;
-    address_ar: string;
-    address_en: string;
-  };
-  phone?: string;
-  email?: string;
-  working_hours?: {
-    open: string; // e.g., "09:00"
-    close: string; // e.g., "21:00"
-  };
-  is_active: boolean;
 }
 
 interface CarData {
@@ -111,7 +97,7 @@ interface CalendarDate {
 
 const BookingScreen: React.FC = () => {
   const { carId: id } = useLocalSearchParams<{ carId?: string }>();
-  const router = useRouter();
+  const { push, replace, back } = useSafeNavigate();
   const { colors } = useTheme();
   const responsive = useResponsive();
   const fonts = useFontFamily();
@@ -229,32 +215,6 @@ const BookingScreen: React.FC = () => {
     [currentLanguage]
   );
 
-  // Duration options based on rental type
-  const getDurationOptions = useCallback(() => {
-    if (formData.rentalType === "weekly") {
-      return [
-        {
-          value: "1",
-          label: currentLanguage === "ar" ? "أسبوع واحد" : "1 Week",
-        },
-        { value: "2", label: currentLanguage === "ar" ? "أسبوعين" : "2 Weeks" },
-        {
-          value: "3",
-          label: currentLanguage === "ar" ? "3 أسابيع" : "3 Weeks",
-        },
-      ];
-    } else if (formData.rentalType === "monthly") {
-      return [
-        {
-          value: "1",
-          label: currentLanguage === "ar" ? "شهر واحد" : "1 Month",
-        },
-        { value: "2", label: currentLanguage === "ar" ? "شهرين" : "2 Months" },
-      ];
-    }
-    return [];
-  }, [formData.rentalType, currentLanguage]);
-
   // Calculate end date based on rental type and duration
   useEffect(() => {
     if (formData.startDate && formData.rentalType && formData.duration) {
@@ -285,7 +245,7 @@ const BookingScreen: React.FC = () => {
   useEffect(() => {
     const fetchCarData = async () => {
       if (!id) {
-        router.back();
+        back();
         return;
       }
 
@@ -343,38 +303,40 @@ const BookingScreen: React.FC = () => {
               ? "لا يمكن العثور على السيارة المطلوبة أو أنها غير متاحة"
               : "Cannot find the requested car or it is not available"
           );
-          router.back();
+          back();
           return;
         }
 
+        const dd = carData as any;
+
         // Transform the data structure
         const transformedCar: CarData = {
-          car_id: carData.id,
-          brand_name_ar: carData.car_models.car_brands.name_ar,
-          brand_name_en: carData.car_models.car_brands.name_en,
-          model_name_ar: carData.car_models.name_ar,
-          model_name_en: carData.car_models.name_en,
-          model_year: carData.car_models.year,
-          main_image_url: carData.car_models.default_image_url || "",
-          color_name_ar: carData.car_colors.name_ar,
-          color_name_en: carData.car_colors.name_en,
-          daily_price: carData.daily_price,
-          weekly_price: carData.weekly_price,
-          monthly_price: carData.monthly_price,
-          seats: carData.seats,
-          fuel_type: carData.fuel_type,
-          transmission: carData.transmission,
-          branch_id: carData.branch_id,
-          branch_name_ar: carData.branches.name_ar,
-          branch_name_en: carData.branches.name_en,
-          is_new: carData.is_new,
-          discount_percentage: carData.discount_percentage || 0,
-          status: carData.status,
-          additional_images: carData.additional_images || [],
-          is_available: carData.status === "available",
-          description_ar: carData.description_ar,
-          features_ar: carData.features_ar || [],
-          rental_types: carData.rental_types || ["daily"],
+          car_id: dd.id,
+          brand_name_ar: dd.car_models.car_brands.name_ar,
+          brand_name_en: dd.car_models.car_brands.name_en,
+          model_name_ar: dd.car_models.name_ar,
+          model_name_en: dd.car_models.name_en,
+          model_year: dd.car_models.year,
+          main_image_url: dd.car_models.default_image_url || "",
+          color_name_ar: dd.car_colors.name_ar,
+          color_name_en: dd.car_colors.name_en,
+          daily_price: dd.daily_price,
+          weekly_price: dd.weekly_price,
+          monthly_price: dd.monthly_price,
+          seats: dd.seats,
+          fuel_type: dd.fuel_type,
+          transmission: dd.transmission,
+          branch_id: dd.branch_id,
+          branch_name_ar: dd.branches.name_ar,
+          branch_name_en: dd.branches.name_en,
+          is_new: dd.is_new,
+          discount_percentage: dd.discount_percentage || 0,
+          status: dd.status,
+          additional_images: dd.additional_images || [],
+          is_available: dd.status === "available",
+          description_ar: dd.description_ar,
+          features_ar: dd.features_ar || [],
+          rental_types: dd.rental_types || ["daily"],
         };
 
         setCar(transformedCar);
@@ -387,14 +349,14 @@ const BookingScreen: React.FC = () => {
               ? "حدث خطأ في جلب بيانات السيارة"
               : "Error fetching car data")
         );
-        router.back();
+        back();
       } finally {
         setFetchingCar(false);
       }
     };
 
     fetchCarData();
-  }, [id, router, currentLanguage, t.carNotFound]);
+  }, [id, back, currentLanguage, t.carNotFound]);
 
   // Check user verification status and fetch profile
   useEffect(() => {
@@ -564,6 +526,11 @@ const BookingScreen: React.FC = () => {
     setShowCalendar(false);
   }, []);
 
+  // Handle form data changes
+  const handleFormDataChange = useCallback((data: Partial<BookingFormData>) => {
+    setFormData((prev) => ({ ...prev, ...data }));
+  }, []);
+
   // Handle form submission
   const handleSubmit = useCallback(async () => {
     if (!car || !bestOffer) return;
@@ -659,7 +626,7 @@ const BookingScreen: React.FC = () => {
           : "We will contact you soon to confirm the booking"
       );
 
-      router.back();
+      back();
     } catch (error: any) {
       console.error("Booking error:", error);
       Alert.alert(
@@ -680,34 +647,13 @@ const BookingScreen: React.FC = () => {
     userDocuments,
     formData,
     currentLanguage,
-    router,
+    back,
     t.loginRequired,
     t.verificationRequired,
     t.bookingSuccess,
   ]);
 
-  // Format selected date for display
-  const formatDisplayDate = useCallback(
-    (dateString: string) => {
-      if (!dateString) return "";
-
-      const date = new Date(dateString);
-      const options: Intl.DateTimeFormatOptions = {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      };
-
-      return date.toLocaleDateString(
-        currentLanguage === "ar" ? "ar-SA" : "en-US",
-        options
-      );
-    },
-    [currentLanguage]
-  );
-
-  // Create styles using StyleSheet
+  // Create styles
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -716,185 +662,6 @@ const BookingScreen: React.FC = () => {
     },
     scrollContainer: {
       padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-    },
-    header: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      alignItems: "center",
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-      gap: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-    },
-    backButton: {
-      width: responsive.getResponsiveValue(40, 44, 48, 52, 56),
-      height: responsive.getResponsiveValue(40, 44, 48, 52, 56),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      backgroundColor: colors.backgroundSecondary,
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    headerText: {
-      flex: 1,
-    },
-    title: {
-      fontSize: responsive.getFontSize(24, 22, 28),
-      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-      marginBottom: responsive.getResponsiveValue(4, 6, 8, 10, 12),
-      textAlign: isRTL ? "right" : "left",
-    },
-    subtitle: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-      textAlign: isRTL ? "right" : "left",
-    },
-    cardContainer: {
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-    },
-    carImage: {
-      width: "100%",
-      height: responsive.getResponsiveValue(180, 200, 220, 240, 260),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-    },
-    carTitle: {
-      fontSize: responsive.getFontSize(18, 17, 21),
-      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-      marginBottom: responsive.getResponsiveValue(4, 6, 8, 10, 12),
-      textAlign: isRTL ? "right" : "left",
-    },
-    carSubtitle: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-      marginBottom: responsive.getResponsiveValue(8, 12, 16, 18, 20),
-      textAlign: isRTL ? "right" : "left",
-    },
-    badgeContainer: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      flexWrap: "wrap",
-      gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-    },
-    carInfoGrid: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "space-between",
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-    },
-    carInfoItem: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      alignItems: "center",
-      gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-    },
-    carInfoText: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Regular,
-      color: colors.text,
-    },
-    separator: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-    },
-    priceRow: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-    },
-    priceLabel: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Regular,
-      color: colors.text,
-    },
-    priceValue: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-    },
-    totalRow: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-    },
-    totalLabel: {
-      fontSize: responsive.getFontSize(16, 15, 19),
-      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-    },
-    totalValue: {
-      fontSize: responsive.getFontSize(16, 15, 19),
-      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-      color: colors.primary,
-    },
-    savingsText: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Medium || fonts.Regular,
-      color: colors.success,
-      textAlign: isRTL ? "right" : "left",
-      marginTop: responsive.getResponsiveValue(4, 6, 8, 10, 12),
-    },
-    formSection: {
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-    },
-    formLabel: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      textAlign: isRTL ? "right" : "left",
-    },
-    dateButton: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      backgroundColor: colors.surface,
-      borderWidth: 2,
-      borderColor: formData.startDate ? colors.primary : colors.border,
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      padding: responsive.getResponsiveValue(14, 16, 18, 20, 22),
-      minHeight: responsive.getInputHeight(),
-    },
-    dateButtonText: {
-      fontSize: responsive.getFontSize(15, 14, 17),
-      fontFamily: fonts.Regular,
-      color: formData.startDate ? colors.text : colors.textSecondary,
-      flex: 1,
-      textAlign: isRTL ? "right" : "left",
-    },
-    dateButtonPlaceholder: {
-      fontSize: responsive.getFontSize(15, 14, 17),
-      fontFamily: fonts.Regular,
-      color: colors.textMuted,
-      flex: 1,
-      textAlign: isRTL ? "right" : "left",
-    },
-    dateButtonIcon: {
-      marginLeft: isRTL ? 0 : responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginRight: isRTL ? responsive.getResponsiveValue(8, 10, 12, 14, 16) : 0,
-    },
-    userInfo: {
-      backgroundColor: colors.backgroundSecondary,
-      padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-    },
-    userInfoTitle: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
-      color: colors.textSecondary,
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      textAlign: isRTL ? "right" : "left",
-    },
-    userInfoRow: {
-      marginBottom: responsive.getResponsiveValue(2, 3, 4, 5, 6),
-    },
-    userInfoText: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Regular,
-      color: colors.text,
-      textAlign: isRTL ? "right" : "left",
     },
     loadingContainer: {
       flex: 1,
@@ -922,6 +689,9 @@ const BookingScreen: React.FC = () => {
     },
     buttonContainer: {
       marginTop: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+    },
+    cardContainer: {
+      marginBottom: responsive.safeAreaBottom + 20,
     },
   });
 
@@ -957,7 +727,7 @@ const BookingScreen: React.FC = () => {
         <View style={styles.buttonContainer}>
           <CustomButton
             title={t.backToSearch}
-            onPress={() => router.back()}
+            onPress={() => back()}
             bgVariant="primary"
           />
         </View>
@@ -972,312 +742,89 @@ const BookingScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons
-              name={isRTL ? "chevron-forward" : "chevron-back"}
-              size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
-              color={colors.text}
-            />
-          </TouchableOpacity>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>{t.title}</Text>
-            <Text style={styles.subtitle}>{t.subtitle}</Text>
-          </View>
-        </View>
+        <BookingHeader title={t.title} subtitle={t.subtitle} />
 
         {/* Car Details Card */}
-        <Card style={styles.cardContainer}>
-          <Card.Header>
-            <Card.Title size="md">{t.carDetails}</Card.Title>
-          </Card.Header>
-          <Card.Content>
-            <Image
-              source={{ uri: car.main_image_url }}
-              style={styles.carImage}
-              resizeMode="cover"
-            />
-
-            <Text style={styles.carTitle}>
-              {currentLanguage === "ar"
-                ? `${car.brand_name_ar} ${car.model_name_ar} ${car.model_year}`
-                : `${car.brand_name_en} ${car.model_name_en} ${car.model_year}`}
-            </Text>
-            <Text style={styles.carSubtitle}>
-              {currentLanguage === "ar" ? car.color_name_ar : car.color_name_en}
-            </Text>
-
-            <View style={styles.badgeContainer}>
-              {car.is_new && (
-                <Badge variant="secondary" size="sm">
-                  {t.new}
-                </Badge>
-              )}
-              {car.discount_percentage > 0 && (
-                <Badge variant="destructive" size="sm">
-                  {currentLanguage === "ar"
-                    ? `خصم ${car.discount_percentage}%`
-                    : `${car.discount_percentage}% Off`}
-                </Badge>
-              )}
-            </View>
-
-            <View style={styles.carInfoGrid}>
-              <View style={styles.carInfoItem}>
-                <Ionicons
-                  name="location"
-                  size={responsive.getIconSize("small")}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.carInfoText}>
-                  {currentLanguage === "ar"
-                    ? car.branch_name_ar
-                    : car.branch_name_en}
-                </Text>
-              </View>
-              <View style={styles.carInfoItem}>
-                <Ionicons
-                  name="people"
-                  size={responsive.getIconSize("small")}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.carInfoText}>
-                  {car.seats} {t.seats}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.separator} />
-
-            {/* Pricing */}
-            {bestOffer && (
-              <>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>{t.dailyPrice}</Text>
-                  <Text style={styles.priceValue}>
-                    {car.daily_price} {t.riyal}
-                  </Text>
-                </View>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>{t.numberOfDays}</Text>
-                  <Text style={styles.priceValue}>
-                    {actualDays} {t.days}
-                  </Text>
-                </View>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>{t.originalPrice}</Text>
-                  <Text style={styles.priceValue}>
-                    {bestOffer.original_price.toFixed(2)} {t.riyal}
-                  </Text>
-                </View>
-
-                {bestOffer.savings_amount > 0 && (
-                  <View style={styles.priceRow}>
-                    <Text style={[styles.priceLabel, { color: colors.error }]}>
-                      {bestOffer.offer_source === "car_offer" &&
-                      bestOffer.offer_name_ar
-                        ? `${currentLanguage === "ar" ? "عرض:" : "Offer:"} ${
-                            currentLanguage === "ar"
-                              ? bestOffer.offer_name_ar
-                              : bestOffer.offer_name_en
-                          }`
-                        : `${
-                            currentLanguage === "ar" ? "الخصم" : "Discount"
-                          } (${bestOffer.discount_value}${
-                            bestOffer.discount_type === "percentage"
-                              ? "%"
-                              : ` ${t.riyal}`
-                          })`}
-                      :
-                    </Text>
-                    <Text style={[styles.priceValue, { color: colors.error }]}>
-                      -{bestOffer.savings_amount.toFixed(2)} {t.riyal}
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.separator} />
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>{t.totalAmount}</Text>
-                  <Text style={styles.totalValue}>
-                    {bestOffer.discounted_price.toFixed(2)} {t.riyal}
-                  </Text>
-                </View>
-
-                {bestOffer.savings_amount > 0 && (
-                  <Text style={styles.savingsText}>
-                    {t.saved} {bestOffer.savings_amount.toFixed(2)} {t.riyal}
-                  </Text>
-                )}
-              </>
-            )}
-          </Card.Content>
-        </Card>
+        <BookingCarInfo
+          car={car}
+          cardTitle={t.carDetails}
+          newLabel={t.new}
+          seatsLabel={t.seats}
+          riyalLabel={t.riyal}
+        />
 
         {/* Booking Form Card */}
-        <Card style={{ marginBottom: responsive.safeAreaBottom + 20 }}>
+        <Card style={styles.cardContainer}>
           <Card.Header>
             <Card.Title size="md">{t.bookingData}</Card.Title>
           </Card.Header>
           <Card.Content>
-            {/* Rental Type */}
-            <View style={styles.formSection}>
-              <Text style={styles.formLabel}>{t.rentalType}</Text>
-              <Select
-                value={formData.rentalType}
-                onValueChange={(value) => {
-                  setFormData((prev) => ({
-                    ...prev,
-                    rentalType: value as "daily" | "weekly" | "monthly",
-                    duration: value === "daily" ? 1 : 1,
-                  }));
+            {/* Booking Form */}
+            <BookingForm
+              formData={formData}
+              onFormDataChange={handleFormDataChange}
+              onOpenCalendar={handleOpenCalendar}
+              availableRentalTypes={availableRentalTypes}
+              texts={{
+                rentalType: t.rentalType,
+                duration: t.duration,
+                rentalDate: t.rentalDate,
+                startDate: t.startDate,
+                selectRentalType: t.selectRentalType,
+                selectWeeks: t.selectWeeks,
+                selectMonths: t.selectMonths,
+                tapToSelectDate: t.tapToSelectDate,
+              }}
+            />
+
+            {/* Booking Summary */}
+            {bestOffer && (
+              <BookingSummary
+                dailyPrice={car.daily_price}
+                actualDays={actualDays}
+                bestOffer={bestOffer}
+                texts={{
+                  dailyPrice: t.dailyPrice,
+                  numberOfDays: t.numberOfDays,
+                  originalPrice: t.originalPrice,
+                  totalAmount: t.totalAmount,
+                  saved: t.saved,
+                  days: t.days,
+                  riyal: t.riyal,
                 }}
-              >
-                <Select.Trigger placeholder={t.selectRentalType} />
-                <Select.Content>
-                  {availableRentalTypes.map((type) => (
-                    <Select.Item key={type.value} value={type.value}>
-                      {type.label}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select>
-            </View>
-
-            {/* Duration Selection */}
-            {formData.rentalType !== "daily" && (
-              <View style={styles.formSection}>
-                <Text style={styles.formLabel}>{t.duration}</Text>
-                <Select
-                  value={formData.duration.toString()}
-                  onValueChange={(value) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      duration: parseInt(value),
-                    }));
-                  }}
-                >
-                  <Select.Trigger
-                    placeholder={
-                      formData.rentalType === "weekly"
-                        ? t.selectWeeks
-                        : t.selectMonths
-                    }
-                  />
-                  <Select.Content>
-                    {getDurationOptions().map((option) => (
-                      <Select.Item key={option.value} value={option.value}>
-                        {option.label}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select>
-              </View>
+              />
             )}
 
-            {/* Start Date - Enhanced Date Button */}
-            <View style={styles.formSection}>
-              <Text style={styles.formLabel}>
-                {formData.rentalType === "daily" ? t.rentalDate : t.startDate}
-              </Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={handleOpenCalendar}
-                activeOpacity={0.7}
-              >
-                {formData.startDate ? (
-                  <Text style={styles.dateButtonText}>
-                    {formatDisplayDate(formData.startDate)}
-                  </Text>
-                ) : (
-                  <Text style={styles.dateButtonPlaceholder}>
-                    {t.tapToSelectDate}
-                  </Text>
-                )}
-                <View style={styles.dateButtonIcon}>
-                  <Ionicons
-                    name="calendar"
-                    size={responsive.getIconSize("small")}
-                    color={
-                      formData.startDate ? colors.primary : colors.textSecondary
-                    }
-                  />
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            {/* User Info Display */}
-            {userProfile && (
-              <View style={styles.userInfo}>
-                <Text style={styles.userInfoTitle}>{t.customerInfo}</Text>
-                <View style={styles.userInfoRow}>
-                  <Text style={styles.userInfoText}>
-                    <Text
-                      style={{ fontFamily: fonts.Medium || fonts.SemiBold }}
-                    >
-                      {t.name}
-                    </Text>{" "}
-                    {userProfile.full_name}
-                  </Text>
-                </View>
-                <View style={styles.userInfoRow}>
-                  <Text style={styles.userInfoText}>
-                    <Text
-                      style={{ fontFamily: fonts.Medium || fonts.SemiBold }}
-                    >
-                      {t.email}
-                    </Text>{" "}
-                    {userProfile.email}
-                  </Text>
-                </View>
-                {userProfile.phone && (
-                  <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoText}>
-                      <Text
-                        style={{ fontFamily: fonts.Medium || fonts.SemiBold }}
-                      >
-                        {t.phone}
-                      </Text>{" "}
-                      {userProfile.phone}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* Submit Button */}
-            <CustomButton
-              title={
-                loading
-                  ? t.processing
-                  : `${t.confirmBooking} - ${
-                      bestOffer ? bestOffer.discounted_price.toFixed(2) : "0"
-                    } ${t.riyal}`
-              }
-              onPress={handleSubmit}
+            {/* Booking Button */}
+            <BookingButton
               loading={loading}
               disabled={loading || !bestOffer || !formData.startDate}
-              bgVariant="primary"
+              onSubmit={handleSubmit}
+              userProfile={userProfile}
+              totalPrice={bestOffer?.discounted_price || 0}
+              texts={{
+                processing: t.processing,
+                confirmBooking: t.confirmBooking,
+                riyal: t.riyal,
+                customerInfo: t.customerInfo,
+                name: t.name,
+                email: t.email,
+                phone: t.phone,
+              }}
             />
           </Card.Content>
         </Card>
       </ScrollView>
 
-      {/* Calendar Modal - Only shows when showCalendar is true */}
-      {showCalendar && (
-        <CustomCalendar
-          visible={showCalendar}
-          onClose={handleCloseCalendar}
-          onDateSelect={handleDateSelect}
-          minDate={minDate}
-          rentalType={formData.rentalType}
-          duration={formData.duration}
-          showRentalOptions={false}
-        />
-      )}
+      {/* Calendar Modal */}
+      <BookingCalendarModal
+        visible={showCalendar}
+        onClose={handleCloseCalendar}
+        onDateSelect={handleDateSelect}
+        minDate={minDate}
+        rentalType={formData.rentalType}
+        duration={formData.duration}
+      />
     </View>
   );
 };

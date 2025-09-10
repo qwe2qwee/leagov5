@@ -86,6 +86,10 @@ export default function RootLayout() {
           />
           <Stack.Screen name="+not-found" options={{ headerShown: false }} />
           <Stack.Screen
+            name="screens/DocumentsUploadScreen"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="otp-modal"
             options={{
               presentation: "modal",

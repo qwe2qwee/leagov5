@@ -5,9 +5,9 @@ import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useNavLockStore } from "@/store/useNavLockStore";
 import { Car, CarCardProps } from "@/types/CardTypes";
+import { useSafeNavigate } from "@/utils/useSafeNavigate";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Badge } from "../ui/Badge";
@@ -34,6 +34,7 @@ export const CarCard: React.FC<CarCardProps> = ({
 
   // Use the language from store if not provided
   const activeLanguage = language || currentLanguage;
+  const { push, replace, back } = useSafeNavigate();
 
   // Helper functions
   const getBrand = (car: Car) =>
@@ -83,7 +84,7 @@ export const CarCard: React.FC<CarCardProps> = ({
       lock();
 
       // Navigate to car details page
-      router.push({
+      push({
         pathname: "/screens/Car-details",
         params: {
           carId: car.id,
@@ -105,7 +106,7 @@ export const CarCard: React.FC<CarCardProps> = ({
         lock();
 
         // Navigate to booking page
-        router.push({
+        push({
           pathname: "/screens/Booking",
           params: {
             carId: car.id,
