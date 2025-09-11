@@ -90,6 +90,10 @@ export default function RootLayout() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="screens/ProfileEdit"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="otp-modal"
             options={{
               presentation: "modal",
