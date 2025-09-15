@@ -499,9 +499,9 @@ export const useAuthLogic = () => {
           lang
         );
         if (res.error) return { error: res.error };
-
         const tempPassword = res.data?.temp_password;
         const serverUser = res.data?.user;
+        console.log(tempPassword);
 
         if (!serverUser) {
           console.error("verifyOtpRequest returned no user data", { res });

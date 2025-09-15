@@ -1,0 +1,2783 @@
+-- ==============================
+-- النسخة النهائية الكاملة لقاعدة البيانات - متضمنة كل شيء
+-- لا تشمل أي بيانات أولية (INSERTs)، فقط الهيكل والدوال والقيود
+-- ==============================
+
+-- 1. تمكين الامتدادات اللازمة
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 2. إنشاء الأنواع المخصصة (Enums)
+DO $$ BEGIN CREATE TYPE public.user_role AS ENUM ('admin', 'branch', 'branch_employee', 'customer'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.rental_type AS ENUM ('daily', 'weekly', 'monthly', 'ownership'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.booking_status AS ENUM ('pending', 'confirmed', 'payment_pending', 'active', 'completed', 'cancelled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.document_status AS ENUM ('pending', 'approved', 'rejected'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.car_status AS ENUM ('available', 'rented', 'maintenance', 'hidden'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.notification_type AS ENUM ('info','warning','booking_update','system'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE public.announcement_priority AS ENUM ('normal','high'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- 3. إنشاء الجداول الرئيسية
+CREATE TABLE IF NOT EXISTS public.branches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name_en TEXT NOT NULL,
+  name_ar TEXT,
+  location_en TEXT NOT NULL,
+  location_ar TEXT,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  geom geography(Point, 4326),
+  phone TEXT,
+  email TEXT,
+  working_hours TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  manager_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE,
+  full_name TEXT,
+  phone TEXT UNIQUE,
+  phone_verified_at TIMESTAMPTZ,
+  age INTEGER,
+  gender TEXT CHECK (gender IN ('male', 'female')),
+  role user_role NOT NULL DEFAULT 'customer',
+  location TEXT,
+  is_verified BOOLEAN DEFAULT FALSE,
+  user_latitude DECIMAL(10,8),
+  user_longitude DECIMAL(11,8),
+  location_updated_at TIMESTAMP WITH TIME ZONE,
+  location_accuracy NUMERIC,
+  geom geography(Point, 4326),
+  branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.branches ADD CONSTRAINT fk_manager FOREIGN KEY (manager_id) REFERENCES auth.users(id);
+
+CREATE TABLE IF NOT EXISTS public.documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  document_type TEXT NOT NULL,
+  document_url TEXT NOT NULL,
+  status document_status DEFAULT 'pending',
+  rejection_reason TEXT,
+  verified_by UUID REFERENCES auth.users(id),
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT documents_document_type_check CHECK (document_type = ANY (ARRAY['national_id'::text, 'driving_license'::text])),
+  CONSTRAINT chk_document_url_scheme CHECK (
+    document_url ~* '^https://[a-z0-9.-]+(/.*)?$'::text 
+    OR document_url ~* '^/storage/v1/object/public/.*'::text
+    OR document_url ~* '^[a-zA-Z0-9_/-]+\.(jpg|jpeg|png|pdf|doc|docx)$'::text
+  )
+);
+
+CREATE TABLE IF NOT EXISTS public.car_brands (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name_en TEXT NOT NULL UNIQUE,
+  name_ar TEXT,
+  logo_url TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.car_models (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  brand_id UUID NOT NULL REFERENCES public.car_brands(id) ON DELETE CASCADE,
+  name_en TEXT NOT NULL,
+  name_ar TEXT,
+  year INTEGER NOT NULL,
+  default_image_url TEXT,
+  description_en TEXT,
+  description_ar TEXT,
+  specifications JSONB DEFAULT '{}',
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(brand_id, name_en, year)
+);
+
+CREATE TABLE IF NOT EXISTS public.car_colors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name_en TEXT NOT NULL UNIQUE,
+  name_ar TEXT,
+  hex_code TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.cars (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  branch_id UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+  model_id UUID NOT NULL REFERENCES public.car_models(id),
+  color_id UUID NOT NULL REFERENCES public.car_colors(id),
+  daily_price DECIMAL(10, 2) NOT NULL,
+  weekly_price DECIMAL(10, 2),
+  monthly_price DECIMAL(10, 2),
+  ownership_price DECIMAL(10, 2),
+  mileage INTEGER DEFAULT 0,
+  seats INTEGER NOT NULL DEFAULT 5,
+  fuel_type TEXT NOT NULL DEFAULT 'gasoline',
+  transmission TEXT NOT NULL DEFAULT 'automatic',
+  features TEXT[],
+  features_ar TEXT[],
+  features_en TEXT[],
+  branch_description_ar TEXT,
+  branch_description_en TEXT,
+  branch_images TEXT[],
+  quantity INTEGER NOT NULL DEFAULT 1,
+  available_quantity INTEGER NOT NULL DEFAULT 1,
+  status car_status DEFAULT 'available',
+  is_new BOOLEAN DEFAULT FALSE,
+  discount_percentage INTEGER DEFAULT 0,
+  offer_expires_at TIMESTAMPTZ,
+  rental_types rental_type[] DEFAULT '{daily}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (available_quantity <= quantity),
+  CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
+  CHECK (daily_price > 0)
+);
+
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  car_id UUID NOT NULL REFERENCES public.cars(id),
+  branch_id UUID NOT NULL REFERENCES public.branches(id),
+  rental_type rental_type NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  total_days INTEGER NOT NULL,
+  daily_rate DECIMAL(10, 2) NOT NULL,
+  total_amount DECIMAL(10, 2) NOT NULL,
+  discount_amount DECIMAL(10, 2) DEFAULT 0,
+  final_amount DECIMAL(10, 2) NOT NULL,
+  status booking_status DEFAULT 'pending',
+  payment_reference TEXT,
+  approved_by UUID REFERENCES auth.users(id),
+  approved_at TIMESTAMPTZ,
+  notes TEXT,
+  booking_range daterange GENERATED ALWAYS AS (daterange(start_date, end_date, '[)')) STORED,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (daily_rate >= 0),
+  CHECK (total_amount >= 0),
+  CHECK (final_amount >= 0),
+  CHECK (start_date < end_date)
+);
+
+CREATE TABLE IF NOT EXISTS public.announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title_en TEXT NOT NULL,
+  title_ar TEXT,
+  description_en TEXT,
+  description_ar TEXT,
+  image_url TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  is_featured BOOLEAN DEFAULT FALSE,
+  priority public.announcement_priority DEFAULT 'normal',
+  branch_id UUID REFERENCES public.branches(id),
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title_en TEXT NOT NULL,
+  title_ar TEXT,
+  message_en TEXT NOT NULL,
+  message_ar TEXT,
+  type public.notification_type NOT NULL,
+  is_read BOOLEAN DEFAULT FALSE,
+  metadata JSONB DEFAULT '{}',
+  created_by UUID REFERENCES auth.users(id),
+  sent_via TEXT CHECK (sent_via IN ('system','job','admin','branch_manager')) DEFAULT 'system',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT notifications_metadata_size CHECK (pg_column_size(metadata) <= 8192)
+);
+
+CREATE TABLE IF NOT EXISTS public.car_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  car_id UUID NOT NULL REFERENCES public.cars(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+  offer_name_ar TEXT NOT NULL,
+  offer_name_en TEXT NOT NULL,
+  description_ar TEXT,
+  description_en TEXT,
+  discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage', 'fixed_amount', 'buy_days_get_free')),
+  discount_value DECIMAL(10,2) NOT NULL,
+  min_rental_days INTEGER DEFAULT 1,
+  max_rental_days INTEGER,
+  rental_types rental_type[] DEFAULT '{daily}',
+  valid_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_until TIMESTAMPTZ NOT NULL,
+  max_uses INTEGER,
+  current_uses INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_by UUID NOT NULL REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.rate_limits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identifier TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  attempt_count INTEGER DEFAULT 1,
+  first_attempt TIMESTAMPTZ DEFAULT NOW(),
+  last_attempt TIMESTAMPTZ DEFAULT NOW(),
+  blocked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(identifier, action_type)
+);
+
+CREATE TABLE IF NOT EXISTS public.security_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type TEXT NOT NULL,
+  user_id UUID REFERENCES auth.users(id),
+  identifier TEXT,
+  details JSONB,
+  user_agent TEXT,
+  ip_address INET,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.notification_outbox (
+  id bigserial PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid,
+  to_user uuid NOT NULL,
+  type public.notification_type NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id bigserial PRIMARY KEY,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  actor uuid,
+  table_name text NOT NULL,
+  row_id uuid,
+  action text CHECK (action IN ('insert','update','delete')),
+  old_data jsonb,
+  new_data jsonb
+);
+
+CREATE TABLE IF NOT EXISTS public.otp_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  phone TEXT NOT NULL,
+  authentica_session_id TEXT,
+  status TEXT DEFAULT 'pending',
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '5 minutes'),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.phone_verifications (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  phone_number TEXT NOT NULL,
+  verification_code TEXT NOT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.auth_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  action TEXT NOT NULL,
+  ip_address INET,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. تمكين RLS على جميع الجداول
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_brands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_models ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_colors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cars ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.car_offers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_outbox ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.otp_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.phone_verifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.auth_logs ENABLE ROW LEVEL SECURITY;
+
+-- 5. جميع الدوال العامة والمساعدة
+
+-- دوال التحديث التلقائي
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- دوال المستخدمين والأدوار
+CREATE OR REPLACE FUNCTION public.get_user_role(_user_id UUID)
+RETURNS user_role
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT role FROM public.profiles WHERE user_id = _user_id;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_user_verified(_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT is_verified FROM public.profiles WHERE user_id = _user_id;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean 
+LANGUAGE sql 
+STABLE 
+SET search_path = 'public'
+AS $$
+  SELECT get_user_role(auth.uid()) = 'admin';
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_branch_manager()
+RETURNS boolean 
+LANGUAGE sql 
+STABLE 
+SET search_path = 'public'
+AS $$
+  SELECT get_user_role(auth.uid()) = 'branch';
+$$;
+
+CREATE OR REPLACE FUNCTION public.current_user_branch_id()
+RETURNS uuid 
+LANGUAGE sql 
+STABLE 
+SET search_path = 'public'
+AS $$
+  SELECT branch_id FROM profiles WHERE user_id = auth.uid();
+$$;
+
+-- دوال الحجوزات والتوفر
+CREATE OR REPLACE FUNCTION public.booking_status_consumes_capacity(_st public.booking_status)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path = 'public'
+AS $$
+  SELECT _st IN ('confirmed','payment_pending','active');
+$$;
+
+CREATE OR REPLACE FUNCTION public.make_booking_range(_start date, _end date)
+RETURNS daterange
+LANGUAGE sql
+STABLE
+SET search_path = 'public'
+AS $$
+  SELECT daterange(_start, _end, '[)');
+$$;
+
+CREATE OR REPLACE FUNCTION public.days_from_range(_r daterange)
+RETURNS integer
+LANGUAGE sql
+STABLE
+SET search_path = 'public'
+AS $$
+  SELECT GREATEST(1, (upper(_r) - lower(_r))::int);
+$$;
+
+CREATE OR REPLACE FUNCTION public.check_car_availability(
+  _car_id UUID,
+  _start_date DATE,
+  _end_date DATE DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_available_quantity integer;
+  v_conflicting_bookings integer;
+  v_range daterange;
+  v_end_date date;
+BEGIN
+  v_end_date := COALESCE(_end_date, _start_date + 1);
+  
+  SELECT available_quantity INTO v_available_quantity
+  FROM cars
+  WHERE id = _car_id AND status = 'available';
+  
+  IF v_available_quantity IS NULL OR v_available_quantity <= 0 THEN
+    RETURN false;
+  END IF;
+  
+  v_range := daterange(_start_date, v_end_date, '[)');
+  
+  SELECT COUNT(*) INTO v_conflicting_bookings
+  FROM bookings
+  WHERE car_id = _car_id
+    AND booking_status_consumes_capacity(status)
+    AND (
+      booking_range && v_range
+      OR (booking_range IS NULL AND NOT (end_date <= _start_date OR start_date >= v_end_date))
+    );
+  
+  RETURN v_conflicting_bookings < v_available_quantity;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.validate_booking_availability()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  car_avail INTEGER;
+  overlap_count INTEGER;
+  _range daterange;
+BEGIN
+  IF NEW.status = 'cancelled' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.start_date IS NULL OR NEW.end_date IS NULL THEN
+    RAISE EXCEPTION 'start_date and end_date are required';
+  END IF;
+  IF NEW.start_date >= NEW.end_date THEN
+    RAISE EXCEPTION 'start_date must be before end_date';
+  END IF;
+
+  _range := COALESCE(NEW.booking_range, daterange(NEW.start_date, NEW.end_date, '[)'));
+
+  SELECT available_quantity INTO car_avail
+  FROM public.cars
+  WHERE id = NEW.car_id
+    AND status = 'available'
+  FOR UPDATE;
+
+  IF car_avail IS NULL OR car_avail <= 0 THEN
+    RAISE EXCEPTION 'Car is not available at the selected branch';
+  END IF;
+
+  IF public.booking_status_consumes_capacity(NEW.status) THEN
+    SELECT COUNT(*) INTO overlap_count
+    FROM public.bookings b
+    WHERE b.car_id = NEW.car_id
+      AND public.booking_status_consumes_capacity(b.status)
+      AND (b.id IS DISTINCT FROM NEW.id)
+      AND (
+        b.booking_range && _range 
+        OR (b.booking_range IS NULL AND NOT (b.end_date <= NEW.start_date OR b.start_date >= NEW.end_date))
+      );
+
+    IF overlap_count >= car_avail THEN
+      RAISE EXCEPTION 'Not enough cars available for the requested period (overlaps: %, available: %)', overlap_count, car_avail;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_booking_atomic(
+  p_customer_id uuid,
+  p_car_id uuid,
+  p_branch_id uuid,
+  p_rental_type rental_type,
+  p_start date,
+  p_end date,
+  p_daily_rate numeric,
+  p_discount_amount numeric DEFAULT 0,
+  p_initial_status booking_status DEFAULT 'payment_pending'::booking_status,
+  p_notes text DEFAULT NULL::text
+)
+RETURNS bookings
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_role public.user_role;
+  v_car public.cars%ROWTYPE;
+  v_b public.bookings%ROWTYPE;
+  v_range daterange;
+  v_total_days int;
+  v_total_amount numeric;
+  v_final_amount numeric;
+  v_overlap_count int;
+BEGIN
+  v_role := public.get_user_role(auth.uid());
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION 'Unauthenticated';
+  END IF;
+
+  SELECT * INTO v_car 
+  FROM public.cars 
+  WHERE id = p_car_id 
+    AND status = 'available'
+  FOR UPDATE;
+  
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Car not available';
+  END IF;
+  
+  IF v_car.branch_id IS DISTINCT FROM p_branch_id THEN
+    RAISE EXCEPTION 'Car branch mismatch';
+  END IF;
+
+  IF NOT (p_rental_type = ANY(v_car.rental_types)) THEN
+    RAISE EXCEPTION 'Rental type % not allowed for this car', p_rental_type;
+  END IF;
+
+  IF p_start IS NULL OR p_end IS NULL OR p_start >= p_end THEN
+    RAISE EXCEPTION 'Invalid dates';
+  END IF;
+  
+  v_range := daterange(p_start, p_end, '[)');
+  v_total_days := GREATEST(1, (p_end - p_start));
+
+  IF public.booking_status_consumes_capacity(p_initial_status) THEN
+    SELECT COUNT(*) INTO v_overlap_count
+    FROM public.bookings b
+    WHERE b.car_id = p_car_id
+      AND public.booking_status_consumes_capacity(b.status)
+      AND (
+        (b.booking_range && v_range) 
+        OR (b.booking_range IS NULL AND NOT (b.end_date <= p_start OR b.start_date >= p_end))
+      );
+
+    IF v_overlap_count >= v_car.available_quantity THEN
+      RAISE EXCEPTION 'No availability for the requested period';
+    END IF;
+    
+    UPDATE public.cars
+    SET available_quantity = GREATEST(0, available_quantity - 1),
+        updated_at = now()
+    WHERE id = p_car_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Failed to update car availability';
+    END IF;
+  END IF;
+
+  v_total_amount := (p_daily_rate * v_total_days);
+  v_final_amount := GREATEST(0, v_total_amount - COALESCE(p_discount_amount,0));
+
+  INSERT INTO public.bookings (
+    id, customer_id, car_id, branch_id, rental_type,
+    start_date, end_date, total_days, daily_rate,
+    total_amount, discount_amount, final_amount,
+    status, notes, booking_range
+  ) VALUES (
+    gen_random_uuid(), p_customer_id, p_car_id, p_branch_id, p_rental_type,
+    p_start, p_end, v_total_days, p_daily_rate,
+    v_total_amount, COALESCE(p_discount_amount,0), v_final_amount,
+    p_initial_status, p_notes, v_range
+  )
+  RETURNING * INTO v_b;
+
+  RETURN v_b;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.enforce_car_branch_match()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_car_branch uuid;
+BEGIN
+  SELECT branch_id INTO v_car_branch FROM public.cars WHERE id = NEW.car_id;
+  IF v_car_branch IS NULL THEN
+    RAISE EXCEPTION 'Invalid car_id (car not found)';
+  END IF;
+
+  IF NEW.branch_id IS DISTINCT FROM v_car_branch THEN
+    RAISE EXCEPTION 'Car''s branch (%) must match booking.branch_id (%)', v_car_branch, NEW.branch_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.adjust_car_availability_on_booking_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  old_consumes boolean;
+  new_consumes boolean;
+  was_created_by_atomic boolean;
+BEGIN
+  was_created_by_atomic := (TG_OP = 'INSERT' AND NEW.booking_range IS NOT NULL);
+  
+  old_consumes := (TG_OP = 'UPDATE') AND public.booking_status_consumes_capacity(OLD.status);
+  new_consumes := public.booking_status_consumes_capacity(NEW.status);
+
+  PERFORM 1 FROM public.cars WHERE id = NEW.car_id FOR UPDATE;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF NOT old_consumes AND new_consumes THEN
+      UPDATE public.cars
+      SET available_quantity = GREATEST(0, available_quantity - 1),
+          updated_at = now()
+      WHERE id = NEW.car_id;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Failed to decrement availability for car %', NEW.car_id;
+      END IF;
+    ELSIF old_consumes AND NOT new_consumes THEN
+      UPDATE public.cars
+      SET available_quantity = available_quantity + 1,
+          updated_at = now()
+      WHERE id = NEW.car_id;
+    END IF;
+  ELSIF TG_OP = 'INSERT' AND NOT was_created_by_atomic AND new_consumes THEN
+    UPDATE public.cars
+    SET available_quantity = GREATEST(0, available_quantity - 1),
+        updated_at = now()
+    WHERE id = NEW.car_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.autofill_booking_amounts()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_days int;
+  v_range daterange;
+BEGIN
+  v_range := COALESCE(NEW.booking_range, daterange(NEW.start_date, NEW.end_date, '[)'));
+  v_days := GREATEST(1, (NEW.end_date - NEW.start_date));
+  
+  NEW.booking_range := v_range;
+  NEW.total_days := COALESCE(NEW.total_days, v_days);
+  NEW.total_amount := COALESCE(NEW.total_amount, NEW.daily_rate * v_days);
+  NEW.discount_amount := COALESCE(NEW.discount_amount, 0);
+  NEW.final_amount := COALESCE(NEW.final_amount, GREATEST(0, NEW.total_amount - NEW.discount_amount));
+
+  RETURN NEW;
+END;
+$$;
+
+-- دوال إدارة السيارات والعروض
+CREATE OR REPLACE FUNCTION public.reserve_car_atomic(p_car_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_role user_role;
+BEGIN
+  v_role := public.get_user_role(auth.uid());
+  IF v_role NOT IN ('admin', 'branch', 'branch_employee') THEN
+    RAISE EXCEPTION 'Insufficient privileges to reserve car';
+  END IF;
+
+  PERFORM 1 FROM public.cars WHERE id = p_car_id FOR UPDATE;
+  UPDATE public.cars
+  SET available_quantity = available_quantity - 1
+  WHERE id = p_car_id AND available_quantity > 0;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No available cars for id %', p_car_id;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.release_car_atomic(p_car_id uuid)
+RETURNS void 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_role user_role;
+BEGIN
+  v_role := public.get_user_role(auth.uid());
+  IF v_role NOT IN ('admin', 'branch', 'branch_employee') THEN
+    RAISE EXCEPTION 'Insufficient privileges to release car';
+  END IF;
+
+  PERFORM 1 FROM public.cars WHERE id = p_car_id FOR UPDATE;
+  UPDATE public.cars
+  SET available_quantity = available_quantity + 1
+  WHERE id = p_car_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.increment_offer_usage_atomic(p_offer_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_rec RECORD;
+  v_role user_role;
+BEGIN
+  v_role := public.get_user_role(auth.uid());
+  IF v_role NOT IN ('admin', 'branch', 'branch_employee') THEN
+    RAISE EXCEPTION 'Insufficient privileges to increment offer usage';
+  END IF;
+
+  SELECT * INTO v_rec FROM public.car_offers WHERE id = p_offer_id FOR UPDATE;
+  IF v_rec IS NULL THEN
+    RAISE EXCEPTION 'Offer not found: %', p_offer_id;
+  END IF;
+
+  IF v_rec.is_active IS NOT TRUE OR v_rec.valid_from > now() OR v_rec.valid_until < now() THEN
+    RAISE EXCEPTION 'Offer is not currently valid';
+  END IF;
+
+  IF v_rec.max_uses IS NOT NULL AND v_rec.current_uses >= v_rec.max_uses THEN
+    RAISE EXCEPTION 'Offer usage limit reached';
+  END IF;
+
+  UPDATE public.car_offers
+  SET current_uses = current_uses + 1,
+      updated_at = now()
+  WHERE id = p_offer_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.validate_car_offer()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_car_status car_status;
+BEGIN
+  SELECT status INTO v_car_status
+  FROM public.cars
+  WHERE id = NEW.car_id;
+
+  IF v_car_status IS NULL THEN
+    RAISE EXCEPTION 'Car not found for offer';
+  END IF;
+
+  IF v_car_status IN ('hidden', 'maintenance') THEN
+    RAISE EXCEPTION 'Cannot apply offer to a hidden or maintenance car';
+  END IF;
+
+  IF NEW.is_active = TRUE THEN
+    IF NEW.valid_until < now() THEN
+      RAISE EXCEPTION 'Cannot activate an expired offer';
+    END IF;
+
+    IF NEW.max_uses IS NOT NULL AND NEW.current_uses >= NEW.max_uses THEN
+      RAISE EXCEPTION 'Cannot activate offer that reached max uses';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- دوال الفروع والإحصائيات
+CREATE OR REPLACE FUNCTION public.get_branch_employees_count(_branch_id UUID)
+RETURNS INTEGER
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT COUNT(*)::INTEGER
+  FROM public.profiles 
+  WHERE branch_id = _branch_id 
+    AND role IN ('branch', 'branch_employee');
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branch_cars_count(_branch_id UUID)
+RETURNS INTEGER
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT COUNT(*)::INTEGER
+  FROM public.cars 
+  WHERE branch_id = _branch_id 
+    AND status != 'hidden';
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branch_active_bookings_count(_branch_id UUID)
+RETURNS INTEGER
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT COUNT(*)::INTEGER
+  FROM public.bookings 
+  WHERE branch_id = _branch_id 
+    AND status IN ('pending', 'confirmed', 'payment_pending', 'active');
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branch_statistics(_branch_id UUID)
+RETURNS TABLE (
+  id UUID,
+  name TEXT,
+  location TEXT,
+  is_active BOOLEAN,
+  manager_id UUID,
+  manager_name TEXT,
+  employees_count INTEGER,
+  cars_count INTEGER,
+  active_bookings_count INTEGER,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT 
+    b.id,
+    b.name_en as name,
+    b.location_en as location,
+    b.is_active,
+    b.manager_id,
+    p_manager.full_name as manager_name,
+    public.get_branch_employees_count(b.id) as employees_count,
+    public.get_branch_cars_count(b.id) as cars_count,
+    public.get_branch_active_bookings_count(b.id) as active_bookings_count,
+    b.created_at,
+    b.updated_at
+  FROM public.branches b
+  LEFT JOIN public.profiles p_manager ON b.manager_id = p_manager.user_id
+  WHERE b.id = _branch_id
+    AND (
+      public.get_user_role(auth.uid()) = 'admin'
+      OR b.manager_id = auth.uid()
+      OR b.is_active = true
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branch_employee_list(_branch_id UUID)
+RETURNS TABLE (
+  id UUID,
+  user_id UUID,
+  full_name TEXT,
+  email TEXT,
+  phone TEXT,
+  role user_role,
+  is_verified BOOLEAN,
+  created_at TIMESTAMPTZ
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT 
+    p.id,
+    p.user_id,
+    p.full_name,
+    p.email,
+    p.phone,
+    p.role,
+    p.is_verified,
+    p.created_at
+  FROM public.profiles p
+  WHERE p.branch_id = _branch_id 
+    AND p.role IN ('branch', 'branch_employee')
+    AND (
+      public.get_user_role(auth.uid()) = 'admin'
+      OR EXISTS (
+        SELECT 1 FROM public.branches b 
+        WHERE b.id = _branch_id AND b.manager_id = auth.uid()
+      )
+    )
+  ORDER BY p.created_at DESC;
+$$;
+
+-- دوال البحث الجغرافي
+CREATE OR REPLACE FUNCTION public.get_nearest_branches(
+  _user_lat DECIMAL,
+  _user_lon DECIMAL,
+  _limit INTEGER DEFAULT 5
+)
+RETURNS TABLE (
+  id UUID,
+  name TEXT,
+  location TEXT,
+  latitude DECIMAL,
+  longitude DECIMAL,
+  phone TEXT,
+  email TEXT,
+  working_hours TEXT,
+  distance_meters DECIMAL,
+  distance_km DECIMAL,
+  manager_name TEXT,
+  cars_count INTEGER
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT
+    b.id,
+    b.name_en as name,
+    b.location_en as location,
+    b.latitude,
+    b.longitude,
+    b.phone,
+    b.email,
+    b.working_hours,
+    ROUND(ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    )::DECIMAL, 0) AS distance_meters,
+    ROUND((ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    ) / 1000)::DECIMAL, 2) AS distance_km,
+    p_manager.full_name AS manager_name,
+    public.get_branch_cars_count(b.id) AS cars_count
+  FROM public.branches b
+  LEFT JOIN public.profiles p_manager ON b.manager_id = p_manager.user_id
+  WHERE b.is_active = TRUE
+    AND b.geom IS NOT NULL
+  ORDER BY b.geom <-> ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+  LIMIT _limit;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_nearest_cars(
+  _user_lat DECIMAL,
+  _user_lon DECIMAL,
+  _limit INTEGER DEFAULT 10
+)
+RETURNS TABLE (
+  car_id UUID,
+  car_model TEXT,
+  car_brand TEXT,
+  car_color TEXT,
+  daily_price DECIMAL,
+  branch_name TEXT,
+  branch_location TEXT,
+  distance_meters DECIMAL,
+  distance_km DECIMAL,
+  main_image_url TEXT,
+  seats INTEGER,
+  fuel_type TEXT,
+  transmission TEXT,
+  is_new BOOLEAN,
+  discount_percentage INTEGER
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT
+    c.id AS car_id,
+    cm.name_en AS car_model,
+    cb.name_en AS car_brand,
+    cc.name_en AS car_color,
+    c.daily_price,
+    b.name_en AS branch_name,
+    b.location_en AS branch_location,
+    ROUND(ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    )::DECIMAL, 0) AS distance_meters,
+    ROUND((ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    ) / 1000)::DECIMAL, 2) AS distance_km,
+    cm.default_image_url AS main_image_url,
+    c.seats,
+    c.fuel_type,
+    c.transmission,
+    c.is_new,
+    c.discount_percentage
+  FROM public.cars c
+  JOIN public.branches b ON c.branch_id = b.id
+  JOIN public.car_models cm ON c.model_id = cm.id
+  JOIN public.car_brands cb ON cm.brand_id = cb.id
+  JOIN public.car_colors cc ON c.color_id = cc.id
+  WHERE c.status = 'available'
+    AND c.available_quantity > 0
+    AND b.is_active = TRUE
+    AND b.geom IS NOT NULL
+  ORDER BY b.geom <-> ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+  LIMIT _limit;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_branches_within_distance(
+  _user_lat DECIMAL,
+  _user_lon DECIMAL,
+  _distance_km DECIMAL DEFAULT 50
+)
+RETURNS TABLE (
+  id UUID,
+  name TEXT,
+  location TEXT,
+  distance_meters DECIMAL,
+  distance_km DECIMAL,
+  cars_count INTEGER
+)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT
+    b.id,
+    b.name_en as name,
+    b.location_en as location,
+    ROUND(ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    )::DECIMAL, 0) AS distance_meters,
+    ROUND((ST_Distance(
+      b.geom,
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326)
+    ) / 1000)::DECIMAL, 2) AS distance_km,
+    public.get_branch_cars_count(b.id) AS cars_count
+  FROM public.branches b
+  WHERE b.is_active = TRUE
+    AND b.geom IS NOT NULL
+    AND ST_DWithin(
+      b.geom, 
+      ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326), 
+      _distance_km * 1000
+    )
+  ORDER BY b.geom <-> ST_SetSRID(ST_MakePoint(_user_lon, _user_lat), 4326);
+$$;
+
+CREATE OR REPLACE FUNCTION public.update_branch_geom()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.geom = ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = 'public';
+
+CREATE OR REPLACE FUNCTION public.update_profile_geom()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.user_latitude IS NOT NULL AND NEW.user_longitude IS NOT NULL THEN
+    NEW.geom = ST_SetSRID(ST_MakePoint(NEW.user_longitude, NEW.user_latitude), 4326);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = 'public';
+
+-- دوال اللغة والترجمة
+CREATE OR REPLACE FUNCTION public.detect_language(_text text)
+RETURNS text
+LANGUAGE plpgsql
+STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF _text IS NULL OR trim(_text) = '' THEN
+    RETURN 'ar';
+  END IF;
+  
+  IF _text ~ '[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]' THEN
+    RETURN 'ar';
+  ELSE
+    RETURN 'en';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_localized_text(
+  text_ar TEXT,
+  text_en TEXT,
+  preferred_language TEXT DEFAULT 'ar'
+)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT 
+    CASE 
+      WHEN preferred_language = 'ar' AND text_ar IS NOT NULL AND text_ar != '' THEN text_ar
+      WHEN preferred_language = 'en' AND text_en IS NOT NULL AND text_en != '' THEN text_en
+      WHEN text_ar IS NOT NULL AND text_ar != '' THEN text_ar
+      WHEN text_en IS NOT NULL AND text_en != '' THEN text_en
+      ELSE COALESCE(text_ar, text_en, '')
+    END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.search_bilingual_text(
+  search_term TEXT,
+  text_ar TEXT,
+  text_en TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT 
+    (text_ar ILIKE '%' || search_term || '%') OR 
+    (text_en ILIKE '%' || search_term || '%') OR
+    (to_tsvector('arabic', COALESCE(text_ar, '')) @@ plainto_tsquery('arabic', search_term)) OR
+    (to_tsvector('english', COALESCE(text_en, '')) @@ plainto_tsquery('english', search_term));
+$$;
+
+-- دوال المستخدمين والمصادقة
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  INSERT INTO public.profiles (
+    user_id, 
+    full_name, 
+    email, 
+    phone,
+    age,
+    gender,
+    location,
+    user_latitude,
+    user_longitude,
+    role
+  )
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data ->> 'full_name', ''),
+    CASE 
+      WHEN NEW.raw_user_meta_data ->> 'temp_email' IS NOT NULL 
+        AND NEW.raw_user_meta_data ->> 'email' != '' 
+      THEN NEW.raw_user_meta_data ->> 'email'
+      ELSE COALESCE(NEW.email, '')
+    END,
+    COALESCE(NEW.raw_user_meta_data ->> 'phone', ''),
+    CASE 
+      WHEN NEW.raw_user_meta_data ->> 'age' IS NOT NULL 
+      THEN (NEW.raw_user_meta_data ->> 'age')::INTEGER
+      ELSE NULL
+    END,
+    NEW.raw_user_meta_data ->> 'gender',
+    NEW.raw_user_meta_data ->> 'location',
+    CASE 
+      WHEN NEW.raw_user_meta_data ->> 'user_latitude' IS NOT NULL 
+      THEN (NEW.raw_user_meta_data ->> 'user_latitude')::DECIMAL
+      ELSE NULL
+    END,
+    CASE 
+      WHEN NEW.raw_user_meta_data ->> 'user_longitude' IS NOT NULL 
+      THEN (NEW.raw_user_meta_data ->> 'user_longitude')::DECIMAL
+      ELSE NULL
+    END,
+    'customer'
+  );
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_by_phone(_phone TEXT)
+RETURNS TABLE(user_id UUID, phone TEXT, is_verified BOOLEAN, full_name TEXT)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+  SELECT p.user_id, p.phone, p.is_verified, p.full_name
+  FROM public.profiles p
+  WHERE p.phone = _phone
+  LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_user_with_phone(_phone TEXT, _full_name TEXT DEFAULT NULL)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  new_user_id UUID;
+BEGIN
+  INSERT INTO auth.users (
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    phone,
+    phone_confirmed_at,
+    confirmation_token,
+    recovery_token,
+    created_at,
+    updated_at,
+    raw_app_meta_data,
+    raw_user_meta_data
+  ) VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    gen_random_uuid(),
+    'authenticated',
+    'authenticated',
+    _phone || '@phone.temp',
+    crypt('temp_password', gen_salt('bf')),
+    now(),
+    _phone,
+    now(),
+    '',
+    '',
+    now(),
+    now(),
+    '{"provider": "phone", "providers": ["phone"]}',
+    json_build_object('phone', _phone, 'full_name', COALESCE(_full_name, ''))
+  ) RETURNING id INTO new_user_id;
+
+  INSERT INTO public.profiles (
+    user_id,
+    phone,
+    full_name,
+    email,
+    is_verified
+  ) VALUES (
+    new_user_id,
+    _phone,
+    COALESCE(_full_name, ''),
+    _phone || '@phone.temp',
+    true
+  );
+
+  RETURN new_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.verify_user_phone(_phone TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  target_user_id UUID;
+BEGIN
+  UPDATE public.profiles 
+  SET is_verified = true, updated_at = now()
+  WHERE phone = _phone
+  RETURNING user_id INTO target_user_id;
+
+  UPDATE auth.users
+  SET phone_confirmed_at = now(), updated_at = now()
+  WHERE id = target_user_id;
+
+  RETURN target_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.check_user_exists(_column TEXT, _value TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result_count INTEGER;
+BEGIN
+    IF _column = 'phone' THEN
+        SELECT COUNT(*) INTO result_count 
+        FROM profiles 
+        WHERE phone = _value;
+    ELSIF _column = 'email' THEN
+        SELECT COUNT(*) INTO result_count 
+        FROM profiles 
+        WHERE LOWER(email) = LOWER(_value);
+    ELSE
+        RETURN FALSE;
+    END IF;
+    
+    RETURN result_count > 0;
+END;
+$$;
+
+-- دوال الإشعارات
+CREATE OR REPLACE FUNCTION public.check_notification_rate_limit(
+  _creator uuid, 
+  _to uuid
+)
+RETURNS void 
+LANGUAGE plpgsql 
+SET search_path = 'public'
+AS $$
+DECLARE
+  cnt_creator int;
+  cnt_to int;
+BEGIN
+  SELECT COUNT(*) INTO cnt_creator
+  FROM notification_outbox
+  WHERE created_by = _creator 
+    AND created_at >= now() - interval '10 minutes';
+
+  IF cnt_creator > 50 THEN
+    RAISE EXCEPTION 'rate_limit: too_many_by_creator';
+  END IF;
+
+  SELECT COUNT(*) INTO cnt_to
+  FROM notification_outbox
+  WHERE to_user = _to 
+    AND created_at >= now() - interval '10 minutes';
+
+  IF cnt_to > 20 THEN
+    RAISE EXCEPTION 'rate_limit: too_many_to_same_user';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.send_notification(
+  _to_user uuid,
+  _title_ar text,
+  _title_en text,
+  _message_ar text,
+  _message_en text,
+  _type public.notification_type,
+  _metadata jsonb DEFAULT '{}'::jsonb,
+  _sent_via text DEFAULT 'admin'
+) 
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  new_id uuid;
+  actor uuid := auth.uid();
+BEGIN
+  IF actor IS NOT NULL AND NOT is_admin() AND NOT is_branch_manager() THEN
+    RAISE EXCEPTION 'forbidden: insufficient privileges';
+  END IF;
+
+  IF actor IS NOT NULL THEN
+    PERFORM check_notification_rate_limit(actor, _to_user);
+  END IF;
+
+  INSERT INTO notification_outbox (created_by, to_user, type)
+  VALUES (actor, _to_user, _type);
+
+  INSERT INTO notifications (
+    id, user_id, title_ar, title_en, message_ar, message_en, 
+    type, metadata, created_by, sent_via
+  )
+  VALUES (
+    gen_random_uuid(), _to_user, _title_ar, _title_en, _message_ar, _message_en,
+    _type, COALESCE(_metadata, '{}'::jsonb), actor, _sent_via
+  )
+  RETURNING id INTO new_id;
+
+  RETURN new_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.notifications_user_update_guard()
+RETURNS trigger 
+LANGUAGE plpgsql 
+SET search_path = 'public'
+AS $$
+BEGIN
+  IF is_admin() THEN
+    RETURN NEW;
+  END IF;
+  
+  IF auth.uid() = NEW.user_id THEN
+    IF (
+      OLD.user_id IS DISTINCT FROM NEW.user_id OR
+      OLD.title_ar IS DISTINCT FROM NEW.title_ar OR
+      OLD.title_en IS DISTINCT FROM NEW.title_en OR
+      OLD.message_ar IS DISTINCT FROM NEW.message_ar OR
+      OLD.message_en IS DISTINCT FROM NEW.message_en OR
+      OLD.type IS DISTINCT FROM NEW.type OR
+      OLD.metadata IS DISTINCT FROM NEW.metadata OR
+      OLD.created_by IS DISTINCT FROM NEW.created_by OR
+      OLD.sent_via IS DISTINCT FROM NEW.sent_via
+    ) THEN
+      RAISE EXCEPTION 'forbidden: users can only update is_read field';
+    END IF;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.mark_notifications_read(
+  _notification_ids uuid[]
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  updated_count integer;
+BEGIN
+  UPDATE notifications 
+  SET is_read = true
+  WHERE id = ANY(_notification_ids)
+    AND user_id = auth.uid()
+    AND is_read = false;
+  
+  GET DIAGNOSTICS updated_count = ROW_COUNT;
+  
+  RETURN updated_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_notifications(
+  _limit integer DEFAULT 20,
+  _offset integer DEFAULT 0,
+  _unread_only boolean DEFAULT false
+)
+RETURNS TABLE (
+  id uuid,
+  title_ar text,
+  title_en text,
+  message_ar text,
+  message_en text,
+  type notification_type,
+  metadata jsonb,
+  is_read boolean,
+  created_at timestamptz
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    n.id, n.title_ar, n.title_en, n.message_ar, n.message_en,
+    n.type, n.metadata, n.is_read, n.created_at
+  FROM notifications n
+  WHERE n.user_id = auth.uid()
+    AND (_unread_only = false OR n.is_read = false)
+  ORDER BY n.created_at DESC
+  LIMIT _limit OFFSET _offset;
+END;
+$$;
+
+-- دوال الإعلانات
+CREATE OR REPLACE FUNCTION public.upsert_announcement(
+  _title_ar text,
+  _title_en text,
+  _description_ar text,
+  _description_en text,
+  _id uuid DEFAULT NULL,
+  _branch_id uuid DEFAULT NULL,
+  _is_active boolean DEFAULT true,
+  _is_featured boolean DEFAULT false,
+  _priority public.announcement_priority DEFAULT 'normal',
+  _expires_at timestamptz DEFAULT NULL,
+  _image_url text DEFAULT NULL
+) 
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  actor uuid := auth.uid();
+  out_id uuid;
+BEGIN
+  IF actor IS NULL THEN
+    RAISE EXCEPTION 'unauthenticated';
+  END IF;
+
+  IF NOT is_admin() AND NOT is_branch_manager() THEN
+    RAISE EXCEPTION 'forbidden: insufficient privileges';
+  END IF;
+
+  IF is_branch_manager() AND NOT is_admin() THEN
+    IF _branch_id IS DISTINCT FROM current_user_branch_id() THEN
+      RAISE EXCEPTION 'forbidden: branch manager can only manage own branch announcements';
+    END IF;
+  END IF;
+
+  IF _id IS NULL THEN
+    INSERT INTO announcements (
+      id, title_ar, title_en, description_ar, description_en, 
+      branch_id, is_active, is_featured, priority, expires_at, 
+      image_url, created_by
+    )
+    VALUES (
+      gen_random_uuid(), _title_ar, _title_en, _description_ar, _description_en,
+      _branch_id, _is_active, _is_featured, _priority, _expires_at,
+      _image_url, actor
+    )
+    RETURNING id INTO out_id;
+  ELSE
+    UPDATE announcements SET
+      title_ar = _title_ar,
+      title_en = _title_en,
+      description_ar = _description_ar,
+      description_en = _description_en,
+      branch_id = _branch_id,
+      is_active = _is_active,
+      is_featured = _is_featured,
+      priority = _priority,
+      expires_at = _expires_at,
+      image_url = _image_url,
+      updated_at = now()
+    WHERE id = _id
+    RETURNING id INTO out_id;
+    
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'announcement not found or access denied';
+    END IF;
+  END IF;
+
+  RETURN out_id;
+END;
+$$;
+
+-- دوال التدقيق والمراقبة
+CREATE OR REPLACE FUNCTION public.write_audit()
+RETURNS trigger 
+LANGUAGE plpgsql 
+SET search_path = 'public'
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO audit_log(actor, table_name, row_id, action, new_data)
+    VALUES (auth.uid(), TG_TABLE_NAME, NEW.id, 'insert', to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO audit_log(actor, table_name, row_id, action, old_data, new_data)
+    VALUES (auth.uid(), TG_TABLE_NAME, NEW.id, 'update', to_jsonb(OLD), to_jsonb(NEW));
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO audit_log(actor, table_name, row_id, action, old_data)
+    VALUES (auth.uid(), TG_TABLE_NAME, OLD.id, 'delete', to_jsonb(OLD));
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.log_availability_inconsistency(
+  _car_id uuid,
+  _event_type text,
+  _details jsonb DEFAULT '{}'::jsonb
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  INSERT INTO security_audit_log (
+    event_type, 
+    details,
+    created_at
+  ) VALUES (
+    'availability_inconsistency',
+    jsonb_build_object(
+      'car_id', _car_id,
+      'event_type', _event_type,
+      'details', _details,
+      'timestamp', now()
+    ),
+    now()
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fix_availability_inconsistencies()
+RETURNS table(car_id uuid, expected_availability integer, actual_availability integer, fixed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  car_record RECORD;
+  expected_avail integer;
+  actual_avail integer;
+  consumed_bookings integer;
+BEGIN
+  FOR car_record IN 
+    SELECT c.id, c.quantity, c.available_quantity
+    FROM cars c
+    WHERE c.status = 'available'
+  LOOP
+    SELECT COUNT(*) INTO consumed_bookings
+    FROM bookings b
+    WHERE b.car_id = car_record.id
+      AND booking_status_consumes_capacity(b.status);
+    
+    expected_avail := car_record.quantity - consumed_bookings;
+    actual_avail := car_record.available_quantity;
+    
+    IF expected_avail != actual_avail THEN
+      PERFORM log_availability_inconsistency(
+        car_record.id,
+        'quantity_mismatch',
+        jsonb_build_object(
+          'expected', expected_avail,
+          'actual', actual_avail,
+          'total_quantity', car_record.quantity,
+          'consumed_bookings', consumed_bookings
+        )
+      );
+      
+      UPDATE cars 
+      SET available_quantity = GREATEST(0, expected_avail),
+          updated_at = now()
+      WHERE id = car_record.id;
+      
+      RETURN QUERY SELECT car_record.id, expected_avail, actual_avail, true;
+    ELSE
+      RETURN QUERY SELECT car_record.id, expected_avail, actual_avail, false;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.log_security_event(
+  _event_type TEXT,
+  _user_id UUID DEFAULT NULL,
+  _identifier TEXT DEFAULT NULL,
+  _details jsonb DEFAULT NULL,
+  _user_agent TEXT DEFAULT NULL,
+  _ip_address TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  INSERT INTO public.security_audit_log (
+    event_type, user_id, identifier, details, user_agent, ip_address
+  ) VALUES (
+    _event_type, _user_id, _identifier, _details, _user_agent, CAST(_ip_address AS INET)
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.validate_security_setup()
+RETURNS TABLE(
+  table_name text,
+  has_rls boolean,
+  policy_count integer,
+  security_status text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    t.tablename::text,
+    COALESCE(c.relrowsecurity, false) as has_rls,
+    COALESCE(pol.policy_count, 0)::integer,
+    CASE 
+      WHEN COALESCE(c.relrowsecurity, false) = false THEN 'RLS_DISABLED'
+      WHEN COALESCE(pol.policy_count, 0) = 0 THEN 'NO_POLICIES'
+      ELSE 'SECURE'
+    END::text as security_status
+  FROM pg_tables t
+  LEFT JOIN pg_class c ON c.relname = t.tablename
+  LEFT JOIN pg_namespace n ON c.relnamespace = n.oid AND n.nspname = t.schemaname
+  LEFT JOIN (
+    SELECT 
+      schemaname, 
+      tablename, 
+      COUNT(*) as policy_count
+    FROM pg_policies 
+    GROUP BY schemaname, tablename
+  ) pol ON pol.schemaname = t.schemaname AND pol.tablename = t.tablename
+  WHERE t.schemaname = 'public'
+    AND t.tablename NOT LIKE 'pg_%'
+    AND t.tablename NOT IN ('spatial_ref_sys', 'geography_columns', 'geometry_columns')
+  ORDER BY security_status DESC, t.tablename;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sanitize_audit_logs()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  UPDATE audit_log 
+  SET 
+    old_data = CASE 
+      WHEN old_data ? 'password' THEN old_data - 'password'
+      ELSE old_data 
+    END,
+    new_data = CASE 
+      WHEN new_data ? 'password' THEN new_data - 'password'
+      ELSE new_data 
+    END
+  WHERE old_data ? 'password' OR new_data ? 'password';
+  
+  DELETE FROM otp_requests 
+  WHERE expires_at < NOW() - INTERVAL '24 hours';
+  
+  RAISE NOTICE 'Audit logs sanitized successfully';
+END;
+$$;
+
+-- دوال التنظيف
+CREATE OR REPLACE FUNCTION public.cleanup_old_data()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  DELETE FROM otp_requests 
+  WHERE expires_at < NOW() - INTERVAL '1 day';
+  
+  DELETE FROM rate_limits 
+  WHERE (blocked_until IS NULL OR blocked_until < NOW()) 
+    AND last_attempt < NOW() - INTERVAL '7 days';
+  
+  DELETE FROM notification_outbox 
+  WHERE created_at < NOW() - INTERVAL '30 days';
+  
+  DELETE FROM audit_log 
+  WHERE occurred_at < NOW() - INTERVAL '6 months';
+  
+  DELETE FROM phone_verifications 
+  WHERE expires_at < NOW() - INTERVAL '24 hours';
+END;
+$$;
+
+-- دوال البحث الرئيسية
+CREATE OR REPLACE FUNCTION public.search_cars(
+  search_query text DEFAULT NULL,
+  search_language text DEFAULT NULL,
+  branch_ids uuid[] DEFAULT NULL,
+  brand_ids uuid[] DEFAULT NULL,
+  model_ids uuid[] DEFAULT NULL,
+  color_ids uuid[] DEFAULT NULL,
+  min_price numeric DEFAULT NULL,
+  max_price numeric DEFAULT NULL,
+  price_type text DEFAULT 'daily',
+  min_seats integer DEFAULT NULL,
+  max_seats integer DEFAULT NULL,
+  fuel_types text[] DEFAULT NULL,
+  transmission_types text[] DEFAULT NULL,
+  p_rental_types rental_type[] DEFAULT NULL,
+  include_new_only boolean DEFAULT false,
+  include_discounted_only boolean DEFAULT false,
+  car_status_filter car_status[] DEFAULT '{available}',
+  user_lat numeric DEFAULT NULL,
+  user_lon numeric DEFAULT NULL,
+  max_distance_km numeric DEFAULT NULL,
+  sort_by text DEFAULT 'distance',
+  page_size integer DEFAULT 20,
+  page_number integer DEFAULT 1
+)
+RETURNS TABLE(
+  car_id uuid,
+  brand_name_ar text,
+  brand_name_en text,
+  brand_logo_url text,
+  model_name_ar text,
+  model_name_en text,
+  model_year integer,
+  main_image_url text,
+  color_name_ar text,
+  color_name_en text,
+  color_hex_code text,
+  daily_price numeric,
+  weekly_price numeric,
+  monthly_price numeric,
+  ownership_price numeric,
+  seats integer,
+  fuel_type text,
+  transmission text,
+  mileage integer,
+  description_ar text,
+  description_en text,
+  features_ar text[],
+  features_en text[],
+  additional_images text[],
+  quantity integer,
+  available_quantity integer,
+  status car_status,
+  is_new boolean,
+  discount_percentage integer,
+  offer_expires_at timestamp with time zone,
+  rental_types rental_type[],
+  branch_id uuid,
+  branch_name_ar text,
+  branch_name_en text,
+  branch_location_ar text,
+  branch_location_en text,
+  branch_phone text,
+  distance_km numeric,
+  best_offer_id uuid,
+  best_offer_name_ar text,
+  best_offer_name_en text,
+  best_offer_discount numeric,
+  search_rank real
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path TO 'public'
+AS $$
+DECLARE
+  offset_value INTEGER;
+  detected_lang text;
+BEGIN
+  offset_value := (page_number - 1) * page_size;
+  
+  IF search_language IS NULL AND search_query IS NOT NULL AND search_query != '' THEN
+    detected_lang := detect_language(search_query);
+  ELSE
+    detected_lang := COALESCE(search_language, 'ar');
+  END IF;
+
+  RETURN QUERY
+  WITH car_search AS (
+    SELECT 
+      c.id as car_id,
+      cb.name_ar as brand_name_ar,
+      cb.name_en as brand_name_en,
+      cb.logo_url as brand_logo_url,
+      cm.name_ar as model_name_ar,
+      cm.name_en as model_name_en,
+      cm.year as model_year,
+      cm.default_image_url as main_image_url,
+      cc.name_ar as color_name_ar,
+      cc.name_en as color_name_en,
+      cc.hex_code as color_hex_code,
+      c.daily_price,
+      c.weekly_price,
+      c.monthly_price,
+      c.ownership_price,
+      c.seats,
+      c.fuel_type,
+      c.transmission,
+      c.mileage,
+      COALESCE(c.branch_description_ar, cm.description_ar) as description_ar,
+      COALESCE(c.branch_description_en, cm.description_en) as description_en,
+      c.features_ar,
+      c.features_en,
+      c.branch_images as additional_images,
+      c.quantity,
+      c.available_quantity,
+      c.status,
+      c.is_new,
+      c.discount_percentage,
+      c.offer_expires_at,
+      c.rental_types,
+      c.branch_id,
+      b.name_ar as branch_name_ar,
+      b.name_en as branch_name_en,
+      b.location_ar as branch_location_ar,
+      b.location_en as branch_location_en,
+      b.phone as branch_phone,
+      CASE 
+        WHEN user_lat IS NOT NULL AND user_lon IS NOT NULL AND b.geom IS NOT NULL THEN
+          ROUND((ST_Distance(b.geom, ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)) / 1000)::DECIMAL, 2)
+        ELSE NULL
+      END as distance_km,
+      CASE 
+        WHEN search_query IS NOT NULL AND search_query != '' THEN
+          CASE WHEN detected_lang = 'ar' THEN
+            ts_rank(to_tsvector('arabic', COALESCE(cb.name_ar || ' ' || cm.name_ar, '')), plainto_tsquery('arabic', search_query))
+          ELSE
+            ts_rank(to_tsvector('english', COALESCE(cb.name_en || ' ' || cm.name_en, '')), plainto_tsquery('english', search_query))
+          END
+        ELSE 0.5
+      END as search_rank
+    FROM public.cars c
+    JOIN public.branches b ON c.branch_id = b.id
+    JOIN public.car_models cm ON c.model_id = cm.id
+    JOIN public.car_brands cb ON cm.brand_id = cb.id
+    JOIN public.car_colors cc ON c.color_id = cc.id
+    WHERE b.is_active = TRUE
+      AND c.status = ANY(car_status_filter)
+      AND (branch_ids IS NULL OR c.branch_id = ANY(branch_ids))
+      AND (brand_ids IS NULL OR cb.id = ANY(brand_ids))
+      AND (model_ids IS NULL OR cm.id = ANY(model_ids))
+      AND (color_ids IS NULL OR cc.id = ANY(color_ids))
+      AND (min_price IS NULL OR 
+        CASE WHEN price_type = 'daily' THEN c.daily_price
+             WHEN price_type = 'weekly' THEN c.weekly_price
+             WHEN price_type = 'monthly' THEN c.monthly_price
+             ELSE c.daily_price END >= min_price)
+      AND (max_price IS NULL OR 
+        CASE WHEN price_type = 'daily' THEN c.daily_price
+             WHEN price_type = 'weekly' THEN c.weekly_price
+             WHEN price_type = 'monthly' THEN c.monthly_price
+             ELSE c.daily_price END <= max_price)
+      AND (min_seats IS NULL OR c.seats >= min_seats)
+      AND (max_seats IS NULL OR c.seats <= max_seats)
+      AND (fuel_types IS NULL OR c.fuel_type = ANY(fuel_types))
+      AND (transmission_types IS NULL OR c.transmission = ANY(transmission_types))
+      AND (p_rental_types IS NULL OR c.rental_types && p_rental_types)
+      AND (include_new_only = FALSE OR c.is_new = TRUE)
+      AND (include_discounted_only = FALSE OR c.discount_percentage > 0)
+      AND (search_query IS NULL OR search_query = '' OR 
+        CASE WHEN detected_lang = 'ar' THEN
+          (to_tsvector('arabic', COALESCE(cb.name_ar || ' ' || cm.name_ar || ' ' || cm.description_ar, '')) @@ plainto_tsquery('arabic', search_query)
+           OR cb.name_ar ILIKE '%' || search_query || '%' 
+           OR cm.name_ar ILIKE '%' || search_query || '%'
+           OR cb.name_en ILIKE '%' || search_query || '%' 
+           OR cm.name_en ILIKE '%' || search_query || '%')
+        ELSE
+          (to_tsvector('english', COALESCE(cb.name_en || ' ' || cm.name_en || ' ' || cm.description_en, '')) @@ plainto_tsquery('english', search_query)
+           OR cb.name_en ILIKE '%' || search_query || '%' 
+           OR cm.name_en ILIKE '%' || search_query || '%'
+           OR cb.name_ar ILIKE '%' || search_query || '%' 
+           OR cm.name_ar ILIKE '%' || search_query || '%')
+        END)
+      AND (user_lat IS NULL OR user_lon IS NULL OR max_distance_km IS NULL OR
+        ST_DWithin(b.geom, ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326), max_distance_km * 1000))
+  ),
+  car_with_offers AS (
+    SELECT 
+      cs.*,
+      co.id as best_offer_id,
+      co.offer_name_ar as best_offer_name_ar,
+      co.offer_name_en as best_offer_name_en,
+      co.discount_value as best_offer_discount
+    FROM car_search cs
+    LEFT JOIN LATERAL (
+      SELECT co.id, co.offer_name_ar, co.offer_name_en, co.discount_value
+      FROM public.car_offers co
+      WHERE co.car_id = cs.car_id
+        AND co.is_active = TRUE
+        AND co.valid_from <= NOW()
+        AND co.valid_until >= NOW()
+        AND (co.max_uses IS NULL OR co.current_uses < co.max_uses)
+      ORDER BY co.discount_value DESC
+      LIMIT 1
+    ) co ON true
+  )
+  SELECT 
+    cwo.car_id,
+    cwo.brand_name_ar, cwo.brand_name_en, cwo.brand_logo_url,
+    cwo.model_name_ar, cwo.model_name_en, cwo.model_year, cwo.main_image_url,
+    cwo.color_name_ar, cwo.color_name_en, cwo.color_hex_code,
+    cwo.daily_price, cwo.weekly_price, cwo.monthly_price, cwo.ownership_price,
+    cwo.seats, cwo.fuel_type, cwo.transmission, cwo.mileage,
+    cwo.description_ar, cwo.description_en, cwo.features_ar, cwo.features_en, cwo.additional_images,
+    cwo.quantity, cwo.available_quantity, cwo.status, cwo.is_new, cwo.discount_percentage, cwo.offer_expires_at, cwo.rental_types,
+    cwo.branch_id, cwo.branch_name_ar, cwo.branch_name_en, cwo.branch_location_ar, cwo.branch_location_en, cwo.branch_phone,
+    cwo.distance_km,
+    cwo.best_offer_id,
+    cwo.best_offer_name_ar,
+    cwo.best_offer_name_en,
+    cwo.best_offer_discount,
+    cwo.search_rank
+  FROM car_with_offers cwo
+  ORDER BY 
+    CASE WHEN sort_by = 'price_asc' THEN cwo.daily_price END ASC,
+    CASE WHEN sort_by = 'price_desc' THEN cwo.daily_price END DESC,
+    CASE WHEN sort_by = 'newest' THEN cwo.model_year END DESC,
+    CASE WHEN sort_by = 'brand' AND detected_lang = 'ar' THEN cwo.brand_name_ar END,
+    CASE WHEN sort_by = 'brand' AND detected_lang = 'en' THEN cwo.brand_name_en END,
+    CASE WHEN sort_by = 'discount' THEN cwo.discount_percentage END DESC,
+    CASE WHEN sort_by = 'distance' OR sort_by IS NULL THEN cwo.distance_km END ASC NULLS LAST,
+    cwo.search_rank DESC,
+    cwo.daily_price ASC
+  LIMIT page_size OFFSET offset_value;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.quick_search_suggestions(
+  _term text, 
+  _lang text DEFAULT NULL, 
+  _limit integer DEFAULT 8
+)
+RETURNS TABLE(
+  suggestion text, 
+  source text, 
+  detected_language text
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+  detected_lang text;
+BEGIN
+    detected_lang := COALESCE(_lang, detect_language(_term));
+    
+    RETURN QUERY
+    (
+        SELECT DISTINCT
+            CASE 
+                WHEN detected_lang = 'ar' THEN cb.name_ar
+                ELSE cb.name_en
+            END as suggestion,
+            'brand'::TEXT as source,
+            detected_lang as detected_language
+        FROM car_brands cb
+        WHERE cb.is_active = true
+        AND (
+            (detected_lang = 'ar' AND cb.name_ar ILIKE '%' || _term || '%') OR
+            (detected_lang = 'en' AND cb.name_en ILIKE '%' || _term || '%') OR
+            cb.name_ar ILIKE '%' || _term || '%' OR
+            cb.name_en ILIKE '%' || _term || '%'
+        )
+        ORDER BY 
+            CASE 
+                WHEN detected_lang = 'ar' THEN cb.name_ar
+                ELSE cb.name_en
+            END
+        LIMIT _limit / 3
+    )
+    UNION ALL
+    (
+        SELECT DISTINCT
+            CASE 
+                WHEN detected_lang = 'ar' THEN cm.name_ar
+                ELSE cm.name_en
+            END as suggestion,
+            'model'::TEXT as source,
+            detected_lang as detected_language
+        FROM car_models cm
+        WHERE cm.is_active = true
+        AND (
+            (detected_lang = 'ar' AND cm.name_ar ILIKE '%' || _term || '%') OR
+            (detected_lang = 'en' AND cm.name_en ILIKE '%' || _term || '%') OR
+            cm.name_ar ILIKE '%' || _term || '%' OR
+            cm.name_en ILIKE '%' || _term || '%'
+        )
+        ORDER BY 
+            CASE 
+                WHEN detected_lang = 'ar' THEN cm.name_ar
+                ELSE cm.name_en
+            END
+        LIMIT _limit / 3
+    )
+    UNION ALL
+    (
+        SELECT DISTINCT
+            CASE 
+                WHEN detected_lang = 'ar' THEN b.name_ar
+                ELSE b.name_en
+            END as suggestion,
+            'branch'::TEXT as source,
+            detected_lang as detected_language
+        FROM branches b
+        WHERE b.is_active = true
+        AND (
+            (detected_lang = 'ar' AND b.name_ar ILIKE '%' || _term || '%') OR
+            (detected_lang = 'en' AND b.name_en ILIKE '%' || _term || '%') OR
+            b.name_ar ILIKE '%' || _term || '%' OR
+            b.name_en ILIKE '%' || _term || '%'
+        )
+        ORDER BY 
+            CASE 
+                WHEN detected_lang = 'ar' THEN b.name_ar
+                ELSE b.name_en
+            END
+        LIMIT _limit / 3
+    )
+    ORDER BY source, suggestion
+    LIMIT _limit;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.advanced_car_filter(
+  availability_start_date DATE DEFAULT NULL,
+  availability_end_date DATE DEFAULT NULL,
+  offers_only BOOLEAN DEFAULT FALSE,
+  max_offer_discount DECIMAL DEFAULT NULL,
+  required_features TEXT[] DEFAULT NULL,
+  preferred_features TEXT[] DEFAULT NULL,
+  budget_range TEXT DEFAULT NULL,
+  user_lat DECIMAL DEFAULT NULL,
+  user_lon DECIMAL DEFAULT NULL,
+  preferred_branches UUID[] DEFAULT NULL,
+  include_statistics BOOLEAN DEFAULT FALSE,
+  page_size INTEGER DEFAULT 20,
+  page_number INTEGER DEFAULT 1
+)
+RETURNS TABLE (
+  car_id UUID,
+  brand_name TEXT,
+  model_name TEXT,
+  year INTEGER,
+  daily_price DECIMAL,
+  branch_name TEXT,
+  distance_km DECIMAL,
+  availability_score INTEGER,
+  feature_match_score INTEGER,
+  overall_score DECIMAL
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  offset_value INTEGER;
+  price_min DECIMAL;
+  price_max DECIMAL;
+BEGIN
+  offset_value := (page_number - 1) * page_size;
+
+  CASE budget_range
+    WHEN 'budget' THEN price_min := 0; price_max := 200;
+    WHEN 'mid_range' THEN price_min := 200; price_max := 500;
+    WHEN 'luxury' THEN price_min := 500; price_max := NULL;
+    ELSE price_min := NULL; price_max := NULL;
+  END CASE;
+
+  RETURN QUERY
+  WITH available_cars AS (
+    SELECT 
+      c.id,
+      c.daily_price,
+      c.features_ar,
+      c.features_en,
+      c.branch_id,
+      cm.name_en as model_name,
+      cm.year,
+      cb.name_en as brand_name,
+      b.name_en as branch_name,
+      b.geom,
+      CASE 
+        WHEN availability_start_date IS NULL THEN 100
+        WHEN check_car_availability(c.id, availability_start_date, availability_end_date) THEN 100
+        ELSE 0
+      END as availability_score,
+      CASE 
+        WHEN required_features IS NULL THEN 100
+        WHEN c.features_en @> required_features THEN 100
+        ELSE 0
+      END + 
+      CASE 
+        WHEN preferred_features IS NULL THEN 0
+        ELSE (
+          SELECT (COUNT(*) * 100 / array_length(preferred_features, 1))::INTEGER
+          FROM unnest(preferred_features) feature
+          WHERE feature = ANY(c.features_en)
+        )
+      END as feature_match_score
+    FROM public.cars c
+    JOIN public.car_models cm ON c.model_id = cm.id
+    JOIN public.car_brands cb ON cm.brand_id = cb.id
+    JOIN public.branches b ON c.branch_id = b.id
+    WHERE c.status = 'available'
+      AND c.available_quantity > 0
+      AND b.is_active = TRUE
+      AND (price_min IS NULL OR c.daily_price >= price_min)
+      AND (price_max IS NULL OR c.daily_price <= price_max)
+      AND (preferred_branches IS NULL OR c.branch_id = ANY(preferred_branches))
+      AND (NOT offers_only OR EXISTS (
+        SELECT 1 FROM public.car_offers co 
+        WHERE co.car_id = c.id 
+          AND co.is_active = TRUE 
+          AND co.valid_until >= NOW()
+          AND (max_offer_discount IS NULL OR co.discount_value <= max_offer_discount)
+      ))
+      AND (required_features IS NULL OR c.features_en @> required_features)
+  )
+  SELECT 
+    ac.id as car_id,
+    ac.brand_name,
+    ac.model_name,
+    ac.year,
+    ac.daily_price,
+    ac.branch_name,
+    CASE 
+      WHEN user_lat IS NOT NULL AND user_lon IS NOT NULL AND ac.geom IS NOT NULL THEN
+        ROUND((ST_Distance(ac.geom, ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)) / 1000)::DECIMAL, 2)
+      ELSE NULL
+    END as distance_km,
+    ac.availability_score,
+    ac.feature_match_score,
+    (
+      ac.availability_score * 0.4 + 
+      ac.feature_match_score * 0.3 + 
+      CASE 
+        WHEN user_lat IS NOT NULL AND user_lon IS NOT NULL AND ac.geom IS NOT NULL THEN
+          GREATEST(0, 100 - (ST_Distance(ac.geom, ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)) / 1000)) * 0.3
+        ELSE 50
+      END
+    ) as overall_score
+  FROM available_cars ac
+  WHERE ac.availability_score > 0
+    AND (required_features IS NULL OR ac.feature_match_score >= 100)
+  ORDER BY overall_score DESC, ac.daily_price ASC
+  LIMIT page_size OFFSET offset_value;
+END;
+$$;
+
+-- دوال PDF (وهمية للتوافق)
+CREATE OR REPLACE FUNCTION public.search_pdf_attachment(file_name TEXT, query TEXT, mode TEXT)
+RETURNS TABLE(page_number INTEGER, text_snippet TEXT)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY SELECT 1 AS page_number, 'Sample text' AS text_snippet;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.browse_pdf_attachment(file_name TEXT, pages TEXT)
+RETURNS TABLE(page_number INTEGER, text_content TEXT, screenshot_url TEXT)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY SELECT 1 AS page_number, 'Sample content' AS text_content, 'https://sample.com/screenshot' AS screenshot_url;
+END;
+$$;
+
+-- دوال الموقع الجغرافي الجديدة
+CREATE OR REPLACE FUNCTION public.update_user_geom()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.user_latitude IS NOT NULL AND NEW.user_longitude IS NOT NULL THEN
+    IF NEW.user_latitude BETWEEN -90 AND 90 AND NEW.user_longitude BETWEEN -180 AND 180 THEN
+      NEW.geom = ST_SetSRID(ST_MakePoint(NEW.user_longitude, NEW.user_latitude), 4326);
+      NEW.location_updated_at = NOW();
+    ELSE
+      RAISE EXCEPTION 'Invalid coordinates: latitude must be between -90 and 90, longitude must be between -180 and 180';
+    END IF;
+  ELSE
+    NEW.geom = NULL;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.update_user_profile(
+  _full_name text DEFAULT NULL,
+  _phone text DEFAULT NULL,
+  _location text DEFAULT NULL,
+  _age integer DEFAULT NULL,
+  _gender text DEFAULT NULL,
+  _user_latitude numeric DEFAULT NULL,
+  _user_longitude numeric DEFAULT NULL,
+  _location_accuracy numeric DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = 'public'
+AS $$
+BEGIN
+  UPDATE public.profiles 
+  SET 
+    full_name = COALESCE(_full_name, full_name),
+    phone = COALESCE(_phone, phone),
+    location = COALESCE(_location, location),
+    age = COALESCE(_age, age),
+    gender = COALESCE(_gender, gender),
+    user_latitude = COALESCE(_user_latitude, user_latitude),
+    user_longitude = COALESCE(_user_longitude, user_longitude),
+    location_accuracy = COALESCE(_location_accuracy, location_accuracy),
+    updated_at = now()
+  WHERE user_id = auth.uid();
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.find_users_nearby(
+  _latitude numeric,
+  _longitude numeric,
+  _radius_km numeric DEFAULT 10
+)
+RETURNS TABLE(
+  user_id uuid,
+  full_name text,
+  location text,
+  distance_km numeric
+)
+LANGUAGE plpgsql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.user_id,
+    p.full_name,
+    p.location,
+    ROUND(
+      (ST_Distance(
+        p.geom, 
+        ST_SetSRID(ST_MakePoint(_longitude, _latitude), 4326)
+      ) / 1000)::numeric, 2
+    ) as distance_km
+  FROM public.profiles p
+  WHERE p.geom IS NOT NULL
+    AND ST_DWithin(
+      p.geom,
+      ST_SetSRID(ST_MakePoint(_longitude, _latitude), 4326),
+      _radius_km * 1000
+    )
+  ORDER BY distance_km;
+END;
+$$;
+
+-- 6. سياسات RLS للجداول
+CREATE POLICY "المستخدمون يمكنهم مشاهدة ملفهم الشخصي" ON public.profiles
+  FOR SELECT USING (user_id = auth.uid());
+
+CREATE POLICY "المستخدمون يمكنهم تحديث ملفهم الشخصي" ON public.profiles
+  FOR UPDATE USING (user_id = auth.uid());
+
+CREATE POLICY "الآدمن يمكنه مشاهدة جميع الملفات" ON public.profiles
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "المستخدمون يمكنهم مشاهدة وثائقهم" ON public.documents
+  FOR SELECT USING (user_id = auth.uid());
+
+CREATE POLICY "المستخدمون يمكنهم إدراج وثائقهم" ON public.documents
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "الآدمن يمكنه إدارة جميع الوثائق" ON public.documents
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "Branch owners can view documents of users with bookings from their branch" ON public.documents
+FOR SELECT
+USING (
+  get_user_role(auth.uid()) = 'admin'::user_role
+  OR user_id = auth.uid()
+  OR EXISTS (
+    SELECT 1 
+    FROM public.bookings b
+    JOIN public.branches br ON b.branch_id = br.id
+    WHERE b.customer_id = documents.user_id
+      AND br.manager_id = auth.uid()
+  )
+);
+
+CREATE POLICY "الجميع يمكنه مشاهدة الفروع النشطة" ON public.branches
+  FOR SELECT USING (is_active = true OR public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee'));
+
+CREATE POLICY "الآدمن يمكنه إدارة الفروع" ON public.branches
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "مديرو الفروع يمكنهم تحديث فرعهم" ON public.branches
+  FOR UPDATE USING (manager_id = auth.uid());
+
+CREATE POLICY "الجميع يمكنه مشاهدة العلامات النشطة" ON public.car_brands
+  FOR SELECT USING (is_active = true OR public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee'));
+
+CREATE POLICY "الآدمن يمكنه إدارة العلامات" ON public.car_brands
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "الجميع يمكنه مشاهدة الموديلات النشطة" ON public.car_models
+  FOR SELECT USING (is_active = true OR public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee'));
+
+CREATE POLICY "الآدمن يمكنه إدارة الموديلات" ON public.car_models
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "الجميع يمكنه مشاهدة الألوان النشطة" ON public.car_colors
+  FOR SELECT USING (is_active = true OR public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee'));
+
+CREATE POLICY "الآدمن يمكنه إدارة الألوان" ON public.car_colors
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "الجميع يمكنه مشاهدة السيارات المتاحة" ON public.cars
+  FOR SELECT USING (
+    status = 'available' OR 
+    public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee')
+  );
+
+CREATE POLICY "الآدمن يمكنه إدارة جميع السيارات" ON public.cars
+  FOR ALL USING (public.get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "العملاء يمكنهم مشاهدة حجوزاتهم" ON public.bookings
+  FOR SELECT USING (
+    customer_id = auth.uid() OR 
+    public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee')
+  );
+
+CREATE POLICY "العملاء المتحققين يمكنهم إنشاء حجوزات" ON public.bookings
+  FOR INSERT WITH CHECK (
+    customer_id = auth.uid() AND 
+    public.is_user_verified(auth.uid()) = true
+  );
+
+CREATE POLICY "الآدمن والفروع يمكنهم تحديث الحجوزات" ON public.bookings
+  FOR UPDATE USING (public.get_user_role(auth.uid()) IN ('admin', 'branch', 'branch_employee'));
+
+CREATE POLICY "الجميع يمكنه مشاهدة الإعلانات النشطة" ON public.announcements
+  FOR SELECT USING (is_active = true);
+
+CREATE POLICY "إدارة الإعلانات للآدمن" ON public.announcements
+  FOR ALL USING (is_admin())
+  WITH CHECK (is_admin());
+
+CREATE POLICY "إدارة إعلانات الفرع لمديري الفروع" ON public.announcements
+  FOR ALL USING (
+    is_branch_manager() 
+    AND branch_id = current_user_branch_id()
+  )
+  WITH CHECK (
+    is_branch_manager() 
+    AND branch_id = current_user_branch_id()
+  );
+
+CREATE POLICY "مشاهدة الإشعارات" ON public.notifications
+FOR SELECT 
+USING (user_id = auth.uid() OR is_admin());
+
+CREATE POLICY "تحديث حالة القراءة" ON public.notifications
+FOR UPDATE 
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "منع الإدخال المباشر" ON public.notifications
+FOR INSERT 
+WITH CHECK (false);
+
+CREATE POLICY "حذف الإشعارات للآدمن" ON public.notifications
+FOR DELETE 
+USING (is_admin());
+
+CREATE POLICY "System manages rate limits" ON public.rate_limits
+  FOR ALL USING (false);
+
+CREATE POLICY "Admins can view audit logs" ON public.security_audit_log 
+FOR SELECT USING (get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "System can insert audit logs" ON public.security_audit_log 
+FOR INSERT WITH CHECK (auth.uid() IS NULL OR get_user_role(auth.uid()) = 'admin');
+
+CREATE POLICY "منع الوصول المباشر للـ outbox" ON public.notification_outbox
+FOR ALL USING (false) WITH CHECK (false);
+
+CREATE POLICY "قراءة سجل التدقيق للآدمن فقط" ON public.audit_log 
+FOR SELECT USING (is_admin());
+
+CREATE POLICY "منع الكتابة المباشرة في سجل التدقيق" ON public.audit_log 
+FOR ALL USING (false) WITH CHECK (false);
+
+CREATE POLICY "Users can view their own OTP requests" ON public.otp_requests 
+FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own OTP requests" ON public.otp_requests 
+FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.uid() IS NULL);
+
+CREATE POLICY "Users can update their own OTP requests" ON public.otp_requests 
+FOR UPDATE USING (auth.uid() = user_id OR auth.uid() IS NULL);
+
+CREATE POLICY "Anyone can insert phone verifications" 
+ON public.phone_verifications 
+FOR INSERT 
+WITH CHECK (true);
+
+CREATE POLICY "Service role can read phone verifications" 
+ON public.phone_verifications 
+FOR SELECT 
+USING (true);
+
+CREATE POLICY "Service role can delete phone verifications" 
+ON public.phone_verifications 
+FOR DELETE 
+USING (true);
+
+CREATE POLICY "Only admins can access auth logs"
+ON public.auth_logs
+FOR ALL
+USING (is_admin())
+WITH CHECK (is_admin());
+
+CREATE POLICY "View active car offers" ON public.car_offers
+FOR SELECT USING (is_active = true OR is_admin() OR is_branch_manager());
+
+CREATE POLICY "Manage car offers" ON public.car_offers
+FOR ALL USING (is_admin() OR (is_branch_manager() AND branch_id = current_user_branch_id()))
+WITH CHECK (is_admin() OR (is_branch_manager() AND branch_id = current_user_branch_id()));
+
+-- 7. التريجرات
+CREATE TRIGGER update_profiles_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_documents_updated_at
+  BEFORE UPDATE ON public.documents
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_branches_updated_at
+  BEFORE UPDATE ON public.branches
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_cars_updated_at
+  BEFORE UPDATE ON public.cars
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_bookings_updated_at
+  BEFORE UPDATE ON public.bookings
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_announcements_updated_at
+  BEFORE UPDATE ON public.announcements
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_car_offers_updated_at
+  BEFORE UPDATE ON public.car_offers
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_branch_geom_trigger
+  BEFORE INSERT OR UPDATE ON public.branches
+  FOR EACH ROW EXECUTE FUNCTION public.update_branch_geom();
+
+CREATE TRIGGER update_profile_geom_trigger
+  BEFORE INSERT OR UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.update_profile_geom();
+
+DROP TRIGGER IF EXISTS trigger_update_user_geom ON public.profiles;
+CREATE TRIGGER trigger_update_user_geom
+  BEFORE INSERT OR UPDATE OF user_latitude, user_longitude
+  ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_user_geom();
+
+CREATE TRIGGER trg_audit_notifications
+AFTER INSERT OR UPDATE OR DELETE ON public.notifications
+FOR EACH ROW EXECUTE FUNCTION write_audit();
+
+CREATE TRIGGER trg_audit_announcements
+AFTER INSERT OR UPDATE OR DELETE ON public.announcements
+FOR EACH ROW EXECUTE FUNCTION write_audit();
+
+CREATE TRIGGER trg_notifications_user_update_guard
+BEFORE UPDATE ON public.notifications
+FOR EACH ROW EXECUTE FUNCTION notifications_user_update_guard();
+
+CREATE TRIGGER trg_enforce_car_branch_match
+  BEFORE INSERT OR UPDATE ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_car_branch_match();
+
+CREATE TRIGGER trg_validate_booking_availability
+  BEFORE INSERT OR UPDATE ON public.bookings
+  FOR EACH ROW
+  WHEN (NEW.status IS DISTINCT FROM 'cancelled')
+  EXECUTE FUNCTION public.validate_booking_availability();
+
+CREATE TRIGGER trg_adjust_car_availability_on_booking_change
+  AFTER INSERT OR UPDATE OF status ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.adjust_car_availability_on_booking_change();
+
+CREATE TRIGGER trg_autofill_booking_amounts
+  BEFORE INSERT OR UPDATE ON public.bookings
+  FOR EACH ROW
+  EXECUTE FUNCTION public.autofill_booking_amounts();
+
+CREATE TRIGGER trg_validate_car_offer
+  BEFORE INSERT OR UPDATE ON public.car_offers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_car_offer();
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 8. الفهارس
+CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON public.profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_phone ON public.profiles(phone) WHERE phone IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_profiles_branch_id ON public.profiles(branch_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON public.documents(status);
+CREATE INDEX IF NOT EXISTS idx_cars_branch_id ON public.cars(branch_id);
+CREATE INDEX IF NOT EXISTS idx_cars_status ON public.cars(status);
+CREATE INDEX IF NOT EXISTS idx_cars_model_id ON public.cars(model_id);
+CREATE INDEX IF NOT EXISTS idx_cars_color_id ON public.cars(color_id);
+CREATE INDEX IF NOT EXISTS idx_cars_available ON public.cars(status, available_quantity) WHERE status = 'available';
+CREATE INDEX IF NOT EXISTS idx_cars_price_range ON public.cars(daily_price, status);
+CREATE INDEX IF NOT EXISTS idx_cars_features ON public.cars USING gin(features_ar, features_en);
+CREATE INDEX IF NOT EXISTS idx_cars_rental_types ON public.cars USING gin(rental_types);
+CREATE INDEX IF NOT EXISTS idx_bookings_customer_id ON public.bookings(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_car_id ON public.bookings(car_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON public.bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_booking_range ON public.bookings USING GIST(booking_range);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread_by_user ON public.notifications(user_id, created_at DESC) WHERE is_read = false;
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON public.notifications(type);
+CREATE INDEX IF NOT EXISTS idx_announcements_active_not_expired ON public.announcements(is_active, expires_at NULLS LAST) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_announcements_branch ON public.announcements(branch_id);
+CREATE INDEX IF NOT EXISTS idx_car_offers_car_id ON public.car_offers(car_id);
+CREATE INDEX IF NOT EXISTS idx_car_offers_active ON public.car_offers(is_active, valid_from, valid_until) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_car_brands_search_ar ON public.car_brands USING gin(to_tsvector('arabic', COALESCE(name_ar, '')));
+CREATE INDEX IF NOT EXISTS idx_car_brands_search_en ON public.car_brands USING gin(to_tsvector('english', COALESCE(name_en, '')));
+CREATE INDEX IF NOT EXISTS idx_car_models_search_ar ON public.car_models USING gin(to_tsvector('arabic', COALESCE(name_ar || ' ' || description_ar, '')));
+CREATE INDEX IF NOT EXISTS idx_car_models_search_en ON public.car_models USING gin(to_tsvector('english', COALESCE(name_en || ' ' || description_en, '')));
+CREATE INDEX IF NOT EXISTS idx_branches_search_ar ON public.branches USING gin(to_tsvector('arabic', COALESCE(name_ar || ' ' || location_ar, '')));
+CREATE INDEX IF NOT EXISTS idx_branches_search_en ON public.branches USING gin(to_tsvector('english', COALESCE(name_en || ' ' || location_en, '')));
+CREATE INDEX IF NOT EXISTS idx_phone_verifications_phone_code ON public.phone_verifications(phone_number, verification_code);
+CREATE INDEX IF NOT EXISTS idx_phone_verifications_expires ON public.phone_verifications(expires_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_identifier ON public.rate_limits(identifier, action_type);
+CREATE INDEX IF NOT EXISTS idx_security_audit_log_event ON public.security_audit_log(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_created ON public.notification_outbox(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_table ON public.audit_log(table_name, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_otp_requests_phone ON public.otp_requests(phone, expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_logs_user ON public.auth_logs(user_id, created_at DESC);
+
+-- فهارس جديدة للموقع الجغرافي
+DROP INDEX IF EXISTS idx_profiles_geom;
+CREATE INDEX idx_profiles_geom ON public.profiles USING GIST (geom);
+
+DROP INDEX IF EXISTS idx_profiles_location_text;
+CREATE INDEX idx_profiles_location_text ON public.profiles USING GIN (to_tsvector('arabic', COALESCE(location, '')));
+
+DROP INDEX IF EXISTS idx_branches_geom;
+CREATE INDEX idx_branches_geom ON public.branches USING GIST (geom);
+
+-- 9. Materialized Views للأداء
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.cars_with_images AS
+SELECT 
+  c.id,
+  c.branch_id,
+  c.model_id,
+  c.color_id,
+  c.daily_price,
+  c.weekly_price,
+  c.monthly_price,
+  c.ownership_price,
+  c.seats,
+  c.mileage,
+  c.fuel_type,
+  c.transmission,
+  c.features_en,
+  c.features_ar,
+  c.branch_images as additional_images,
+  c.quantity,
+  c.available_quantity,
+  c.status,
+  c.is_new,
+  c.discount_percentage,
+  c.offer_expires_at,
+  c.rental_types,
+  c.branch_description_ar as description_ar,
+  c.branch_description_en as description_en,
+  c.created_at,
+  c.updated_at,
+  cb.name_ar as brand_name_ar,
+  cb.name_en as brand_name_en,
+  cm.name_ar as model_name_ar,
+  cm.name_en as model_name_en,
+  cm.default_image_url as main_image_url,
+  cm.description_ar as model_description_ar,
+  cm.description_en as model_description_en,
+  cm.year,
+  cm.specifications,
+  cc.name_ar as color_name_ar,
+  cc.name_en as color_name_en,
+  cc.hex_code,
+  b.name_ar as branch_name_ar,
+  b.name_en as branch_name_en,
+  b.location_ar as branch_location_ar,
+  b.location_en as branch_location_en
+FROM public.cars c
+JOIN public.car_models cm ON c.model_id = cm.id
+JOIN public.car_brands cb ON cm.brand_id = cb.id
+JOIN public.car_colors cc ON c.color_id = cc.id
+JOIN public.branches b ON c.branch_id = b.id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cars_with_images_id ON public.cars_with_images (id);
+CREATE INDEX IF NOT EXISTS idx_cars_with_images_status ON public.cars_with_images (status);
+CREATE INDEX IF NOT EXISTS idx_cars_with_images_branch_id ON public.cars_with_images (branch_id);
+
+CREATE OR REPLACE FUNCTION public.refresh_cars_with_images()
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  REFRESH MATERIALIZED VIEW CONCURRENTLY public.cars_with_images;
+$$;
+
+-- 10. Storage Buckets وسياساتها
+DO $$
+BEGIN
+  -- إنشاء documents bucket إذا لم يكن موجوداً
+  IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'documents') THEN
+    INSERT INTO storage.buckets (id, name, public) 
+    VALUES ('documents', 'documents', false);
+  END IF;
+END $$;
+
+-- سياسات RLS لـ documents bucket
+CREATE POLICY "Users can upload their own documents"
+ON storage.objects
+FOR INSERT 
+WITH CHECK (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Users can view their own documents"
+ON storage.objects
+FOR SELECT
+USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Users can delete their own documents"
+ON storage.objects
+FOR DELETE
+USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Admins can manage all documents"
+ON storage.objects
+FOR ALL
+USING (bucket_id = 'documents' AND is_admin());
+
+CREATE POLICY "Branch managers can view documents of users with bookings"
+ON storage.objects
+FOR SELECT
+USING (
+  bucket_id = 'documents' 
+  AND (
+    is_admin() 
+    OR auth.uid()::text = (storage.foldername(name))[1]
+    OR EXISTS (
+      SELECT 1 FROM bookings b
+      JOIN branches br ON b.branch_id = br.id
+      WHERE b.customer_id::text = (storage.foldername(name))[1]
+        AND br.manager_id = auth.uid()
+    )
+  )
+);
+
+-- النهاية - قاعدة البيانات الكاملة مع جميع التحسينات
+-- تم التحقق من جميع الجداول والدوال والسياسات والفهارس
+

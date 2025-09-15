@@ -385,9 +385,7 @@ const DocumentUploadScreen: React.FC = () => {
                 .from("documents")
                 .delete()
                 .eq("id", document.id);
-
               if (dbError) throw dbError;
-
               // Reload documents
               await loadDocuments();
               Alert.alert(t.success, "Document deleted successfully");
