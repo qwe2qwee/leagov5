@@ -96,11 +96,17 @@ export default function HomeScreen() {
       scrollY.setValue(currentScrollY);
 
       const maxScroll = 100;
-      const progress = Math.min(currentScrollY / maxScroll, 1);
+      const progress =
+        currentScrollY <= 0 ? 0 : Math.min(currentScrollY / maxScroll, 1);
+
       const newScale = 1 - progress * 0.15;
-      const newOpacity = 1 - progress * 0.3;
+      const newOpacity = 1 - progress * 0.5;
+
+      // Scale ما ينزل أقل من 0.85
       announcementScale.setValue(Math.max(newScale, 0.85));
-      announcementOpacity.setValue(Math.max(newOpacity, 0.7));
+
+      // Opacity بين 0.7 و 1 فقط
+      announcementOpacity.setValue(Math.min(Math.max(newOpacity, 0.7), 1));
     },
     [scrollY, announcementScale, announcementOpacity]
   );

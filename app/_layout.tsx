@@ -94,6 +94,10 @@ export default function RootLayout() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="screens/Location"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="otp-modal"
             options={{
               presentation: "modal",
@@ -102,6 +106,16 @@ export default function RootLayout() {
               animationDuration: 300,
             }}
           />
+          <Stack.Screen
+            name="screens/TermsAndConditions"
+            options={{ headerShown: false }}
+          />{" "}
+          <Stack.Screen
+            name="screens/Language"
+            options={{ headerShown: false }}
+          />{" "}
+          <Stack.Screen name="screens/Help" options={{ headerShown: false }} />{" "}
+          <Stack.Screen name="screens/About" options={{ headerShown: false }} />
         </Stack>
         <ToastContainer />
       </TabBarHeightProvider>

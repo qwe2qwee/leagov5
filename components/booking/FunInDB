@@ -1,0 +1,209 @@
+//check-user-pending-bookings
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders,
+    });
+  }
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Get the user from the request
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("Missing authorization header");
+    }
+    const token = authHeader.replace("Bearer ", "");
+    const { data: userData, error: userError } = await supabase.auth.getUser(
+      token
+    );
+    if (userError || !userData.user) {
+      throw new Error("Invalid or expired token");
+    }
+    const userId = userData.user.id;
+    console.log(`🔍 Checking pending bookings for user: ${userId}`);
+    // Check for pending bookings
+    const { data: bookings, error: bookingsError } = await supabase
+      .from("bookings")
+      .select(
+        `
+        id,
+        status,
+        expires_at,
+        created_at,
+        car_id,
+        cars (
+          model_id,
+          car_models (
+            name_ar,
+            name_en,
+            brand_id,
+            car_brands (
+              name_ar,
+              name_en
+            )
+          )
+        )
+      `
+      )
+      .eq("customer_id", userId)
+      .eq("status", "payment_pending")
+      .not("expires_at", "is", null)
+      .order("created_at", {
+        ascending: false,
+      });
+    if (bookingsError) {
+      throw bookingsError;
+    }
+    console.log(`📋 Found ${bookings?.length || 0} pending bookings`);
+    const pendingBookings =
+      bookings?.map((booking) => ({
+        id: booking.id,
+        status: booking.status,
+        expires_at: booking.expires_at,
+        created_at: booking.created_at,
+        car_name: `${booking.cars?.car_models?.car_brands?.name_ar || ""} ${
+          booking.cars?.car_models?.name_ar || ""
+        }`,
+        is_expired: booking.expires_at
+          ? new Date(booking.expires_at) <= new Date()
+          : false,
+      })) || [];
+    // Check if any are expired and run cleanup
+    const expiredCount = pendingBookings.filter((b) => b.is_expired).length;
+    if (expiredCount > 0) {
+      console.log(
+        `⚠️ Found ${expiredCount} expired bookings, running cleanup...`
+      );
+      // Trigger cleanup
+      const { error: cleanupError } = await supabase.rpc(
+        "cleanup_expired_bookings"
+      );
+      if (cleanupError) {
+        console.error("Cleanup error:", cleanupError);
+      } else {
+        console.log("✅ Cleanup completed");
+      }
+    }
+    return new Response(
+      JSON.stringify({
+        success: true,
+        user_id: userId,
+        pending_bookings: pendingBookings,
+        expired_count: expiredCount,
+        cleanup_triggered: expiredCount > 0,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  } catch (error) {
+    console.error("❌ Error checking pending bookings:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 500,
+      }
+    );
+  }
+});
+
+// cleanup-expired-bookings
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders,
+    });
+  }
+  try {
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    console.log("🧹 Starting cleanup of expired bookings...");
+    // Call the cleanup function
+    const { data, error } = await supabase.rpc("cleanup_expired_bookings");
+    if (error) {
+      console.error("❌ Error during cleanup:", error);
+      throw error;
+    }
+    const result = data?.[0] || {
+      cleaned_count: 0,
+      restored_cars: [],
+    };
+    console.log(`✅ Cleanup completed:`);
+    console.log(`   - Expired bookings: ${result.cleaned_count}`);
+    console.log(
+      `   - Restored cars: ${result.restored_cars?.join(", ") || "None"}`
+    );
+    // Log success to security audit
+    if (result.cleaned_count > 0) {
+      await supabase.rpc("log_security_event", {
+        _event_type: "booking_cleanup_completed",
+        _user_id: null,
+        _identifier: "system",
+        _details: {
+          expired_bookings: result.cleaned_count,
+          restored_cars: result.restored_cars,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: `Cleaned ${result.cleaned_count} expired bookings`,
+        expired_bookings: result.cleaned_count,
+        restored_cars: result.restored_cars || [],
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error("❌ Cleanup function error:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message,
+        message: "Failed to cleanup expired bookings",
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 500,
+      }
+    );
+  }
+});

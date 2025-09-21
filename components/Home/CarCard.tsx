@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Badge } from "../ui/Badge";
+import { Card } from "../ui/Card";
 
 export const CarCard: React.FC<CarCardProps> = ({
   car,
@@ -139,14 +140,7 @@ export const CarCard: React.FC<CarCardProps> = ({
       backgroundColor: colors.surface,
       borderRadius: getSpacing(8),
       overflow: "hidden",
-      elevation: 1,
-      shadowColor: "#000",
-      shadowOffset: {
-        width: 0,
-        height: 1,
-      },
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
+
       marginBottom: getSpacing(8),
     },
     imageContainer: {
@@ -288,142 +282,145 @@ export const CarCard: React.FC<CarCardProps> = ({
   });
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={handleCardPress}
-      activeOpacity={0.9}
-    >
-      <View style={styles.imageContainer}>
-        <Image source={{ uri: car.images[0] }} style={styles.image} />
+    <Card style={styles.card}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={handleCardPress}
+        activeOpacity={0.9}
+      >
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: car.images[0] }} style={styles.image} />
 
-        <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.3)"]}
-          style={styles.gradientOverlay}
-        />
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.3)"]}
+            style={styles.gradientOverlay}
+          />
 
-        <View style={styles.badgeContainer}>
-          {car.isNew && <Badge variant="default">{t("featured.new")}</Badge>}
-          {(car.discount ?? 0) > 0 && (
-            <Badge variant="secondary">
-              {activeLanguage === "ar"
-                ? `خصم ${car.discount}%`
-                : `${car.discount}% OFF`}
-            </Badge>
-          )}
-          {!car.available && (
-            <Badge variant="destructive">{t("featured.unavailable")}</Badge>
-          )}
-        </View>
-      </View>
-
-      <View style={styles.content}>
-        <View>
-          <View style={styles.carInfo}>
-            <Text
-              style={styles.carTitle}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {getBrand(car)} {getModel(car)}
-            </Text>
-
-            <Text
-              style={styles.carSubtitle}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {car.year} • {getColor(car)}
-            </Text>
+          <View style={styles.badgeContainer}>
+            {car.isNew && <Badge variant="default">{t("featured.new")}</Badge>}
+            {(car.discount ?? 0) > 0 && (
+              <Badge variant="secondary">
+                {activeLanguage === "ar"
+                  ? `خصم ${car.discount}%`
+                  : `${car.discount}% OFF`}
+              </Badge>
+            )}
+            {!car.available && (
+              <Badge variant="destructive">{t("featured.unavailable")}</Badge>
+            )}
           </View>
+        </View>
 
-          <View style={styles.featuresContainer}>
-            <View style={styles.featureItem}>
-              <Ionicons
-                name="people-outline"
-                size={getFontSize(14)}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.featureText}>
-                {car.specs.seats} {activeLanguage === "ar" ? "مقاعد" : "seats"}
+        <View style={styles.content}>
+          <View>
+            <View style={styles.carInfo}>
+              <Text
+                style={styles.carTitle}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {getBrand(car)} {getModel(car)}
+              </Text>
+
+              <Text
+                style={styles.carSubtitle}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {car.year} • {getColor(car)}
               </Text>
             </View>
-            <View style={styles.featureItem}>
-              <Ionicons
-                name="flash-outline"
-                size={getFontSize(14)}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.featureText}>{getTransmission(car)}</Text>
-            </View>
-          </View>
 
-          <View style={styles.pricingContainer}>
-            <View style={styles.priceContainer}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={styles.currentPrice}>{discountedPrice}</Text>
-                <Image
-                  source={icons.riyalsymbol}
-                  resizeMode="contain"
-                  style={{
-                    width: getFontSize(12),
-                    height: getFontSize(12),
-                    marginLeft: getFontSize(2),
-                    tintColor: colors.primary,
-                  }}
+            <View style={styles.featuresContainer}>
+              <View style={styles.featureItem}>
+                <Ionicons
+                  name="people-outline"
+                  size={getFontSize(14)}
+                  color={colors.textSecondary}
                 />
+                <Text style={styles.featureText}>
+                  {car.specs.seats}{" "}
+                  {activeLanguage === "ar" ? "مقاعد" : "seats"}
+                </Text>
               </View>
+              <View style={styles.featureItem}>
+                <Ionicons
+                  name="flash-outline"
+                  size={getFontSize(14)}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.featureText}>{getTransmission(car)}</Text>
+              </View>
+            </View>
 
-              {(car.discount ?? 0) > 0 && (
+            <View style={styles.pricingContainer}>
+              <View style={styles.priceContainer}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={styles.originalPrice}>{car.price.daily}</Text>
+                  <Text style={styles.currentPrice}>{discountedPrice}</Text>
                   <Image
                     source={icons.riyalsymbol}
                     resizeMode="contain"
                     style={{
-                      width: getFontSize(10),
-                      height: getFontSize(10),
+                      width: getFontSize(12),
+                      height: getFontSize(12),
                       marginLeft: getFontSize(2),
-                      tintColor: colors.textSecondary,
+                      tintColor: colors.primary,
                     }}
                   />
                 </View>
-              )}
 
-              <Text style={styles.perDayText}>
-                {activeLanguage === "ar" ? "في اليوم" : "per day"}
-              </Text>
-            </View>
+                {(car.discount ?? 0) > 0 && (
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Text style={styles.originalPrice}>{car.price.daily}</Text>
+                    <Image
+                      source={icons.riyalsymbol}
+                      resizeMode="contain"
+                      style={{
+                        width: getFontSize(10),
+                        height: getFontSize(10),
+                        marginLeft: getFontSize(2),
+                        tintColor: colors.textSecondary,
+                      }}
+                    />
+                  </View>
+                )}
 
-            <View style={styles.availabilityContainer}>
-              <Ionicons
-                name="time-outline"
-                size={getFontSize(12)}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.availabilityText}>
-                {activeLanguage === "ar" ? "متاح الآن" : "Available now"}
-              </Text>
+                <Text style={styles.perDayText}>
+                  {activeLanguage === "ar" ? "في اليوم" : "per day"}
+                </Text>
+              </View>
+
+              <View style={styles.availabilityContainer}>
+                <Ionicons
+                  name="time-outline"
+                  size={getFontSize(12)}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.availabilityText}>
+                  {activeLanguage === "ar" ? "متاح الآن" : "Available now"}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <TouchableOpacity
-          style={[styles.button, !car.available && styles.buttonDisabled]}
-          onPress={handleBookNow}
-          disabled={!car.available}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.buttonText,
-              !car.available && styles.buttonTextDisabled,
-            ]}
+          <TouchableOpacity
+            style={[styles.button, !car.available && styles.buttonDisabled]}
+            onPress={handleBookNow}
+            disabled={!car.available}
+            activeOpacity={0.8}
           >
-            {car.available ? t("featured.book") : t("featured.unavailable")}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
+            <Text
+              style={[
+                styles.buttonText,
+                !car.available && styles.buttonTextDisabled,
+              ]}
+            >
+              {car.available ? t("featured.book") : t("featured.unavailable")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Card>
   );
 };
 
