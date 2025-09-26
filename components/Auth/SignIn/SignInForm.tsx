@@ -2,6 +2,7 @@ import InputField from "@/components/Auth/InputField";
 import CustomButton from "@/components/ui/CustomButton";
 import { icons } from "@/constants";
 import { translationsLogin } from "@/constants/Lang/AuthLangs";
+import { useSignInContext } from "@/hooks/SingInHooks/useSignInContext";
 import { useAuth } from "@/hooks/supabaseHooks/auth/context";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
@@ -9,17 +10,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { useSignInStore } from "@/store/auth/useSignInStore";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useSafeNavigate } from "@/utils/useSafeNavigate";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Keyboard,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -41,6 +34,7 @@ const SignInForm = () => {
   const fonts = useFontFamily();
   const { push } = useSafeNavigate();
   const scrollViewRef = useRef<ScrollView>(null);
+  const { isKeyboardVisible } = useSignInContext();
 
   // Auth hook (we only use phone flows here)
   const { signInWithPhone, checkPhoneExists } = useAuth();
@@ -58,44 +52,13 @@ const SignInForm = () => {
   } = useSignInStore();
 
   // Local keyboard state (not in Zustand)
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { currentLanguage } = useLanguageStore.getState
     ? useLanguageStore.getState()
     : useLanguageStore();
   // note: the store usage above matches original pattern; if your useLanguageStore signature differs adjust accordingly
 
-  // Keyboard listeners
-  useEffect(() => {
-    const handleKeyboardShow = (event: any) => {
-      setIsKeyboardVisible(true);
-      setKeyboardHeight(event.endCoordinates?.height || 0);
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    };
-
-    const handleKeyboardHide = () => {
-      setIsKeyboardVisible(false);
-      setKeyboardHeight(0);
-    };
-
-    const keyboardShowSubscription = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      handleKeyboardShow
-    );
-
-    const keyboardHideSubscription = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      handleKeyboardHide
-    );
-
-    return () => {
-      keyboardShowSubscription?.remove();
-      keyboardHideSubscription?.remove();
-    };
-  }, []);
+  console.log("SignInForm Render: ", { form, errors, isKeyboardVisible });
 
   // Labels (fixed to phone)
   const getLabels = useMemo(() => {
@@ -146,7 +109,7 @@ const SignInForm = () => {
           paddingHorizontal: spacing.horizontal,
           paddingTop: spacing.vertical,
           paddingBottom: spacing.bottom,
-          minHeight: isKeyboardVisible ? height * 0.6 : height * 0.8,
+          height: isKeyboardVisible ? 120 : height * 0.1,
         },
 
         // Input container
@@ -386,7 +349,6 @@ const SignInForm = () => {
 
   return (
     <ScrollView
-      ref={scrollViewRef}
       style={[styles.formContainer, isVerySmallScreen && styles.compactMode]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"

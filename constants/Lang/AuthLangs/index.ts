@@ -682,7 +682,7 @@ export const translationsignUp: {
     email: "Email",
     phone: "Phone Number",
     password: "Password",
-    placeHol: "number without country code",
+    placeHol: "500000000",
     signUp: "Sign Up",
     alreadyAccount: "Already have an account?",
     signIn: "Sign In",
@@ -711,7 +711,7 @@ export const translationsignUp: {
     email: "الإيميل",
     phone: "الجوال",
     password: "كلمة السر",
-    placeHol: "رقم جوالك بدون كود الدولة",
+    placeHol: "500000000",
     signUp: "سجّل",
     alreadyAccount: "عندك حساب من قبل؟",
     signIn: "سجّل دخول",
@@ -723,7 +723,6 @@ export const translationsignUp: {
     emailExists: "الإيميل موجود من قبل",
     phoneNumberExists: "رقم الجوال موجود من قبل",
     invalidPhoneNumber: "رقم الجوال لازم يكون 9 أرقام",
-
     // ✅ إضافات باللهجة
     nameRequired: "الاسم لازم تكتبه",
     nameMinLength: "الاسم لازم يكون حرفين أو أكثر",

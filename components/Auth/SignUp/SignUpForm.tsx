@@ -9,17 +9,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { useFormStore } from "@/store/auth/useSignUpStore";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useSafeNavigate } from "@/utils/useSafeNavigate";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Keyboard,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -65,40 +57,7 @@ const SignUpForm = () => {
 
   // Local keyboard state (not in Zustand)
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { currentLanguage } = useLanguageStore.getState();
-
-  // Keyboard listeners
-  useEffect(() => {
-    const handleKeyboardShow = (event: any) => {
-      setIsKeyboardVisible(true);
-      setKeyboardHeight(event.endCoordinates.height);
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    };
-
-    const handleKeyboardHide = () => {
-      setIsKeyboardVisible(false);
-      setKeyboardHeight(0);
-    };
-
-    const keyboardShowSubscription = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      handleKeyboardShow
-    );
-
-    const keyboardHideSubscription = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      handleKeyboardHide
-    );
-
-    return () => {
-      keyboardShowSubscription?.remove();
-      keyboardHideSubscription?.remove();
-    };
-  }, []);
 
   // Simple labels
   const labels = translationsignUp[currentLanguage];

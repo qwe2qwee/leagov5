@@ -39,7 +39,6 @@ const SignUpScreenContent = () => {
     },
     scrollContentContainer: {
       flexGrow: 1,
-      paddingBottom: isKeyboardVisible ? keyboardHeight + 20 : 20,
       minHeight: screenHeight,
     },
     container: {

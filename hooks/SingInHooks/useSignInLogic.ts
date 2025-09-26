@@ -59,11 +59,6 @@ export const useSignInLogic = (options: UseKeyboardAndScrollOptions = {}) => {
             );
           }
         }, 100);
-      } else {
-        // Simple scrolling - just scroll to end
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
       }
     };
 
