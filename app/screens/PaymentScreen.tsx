@@ -10,6 +10,7 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useToast } from "@/store/useToastStore";
+import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
@@ -24,16 +25,29 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  createPayment,
-  CreditCardRequestSource,
-  PaymentRequest,
-  PaymentResponse,
-  PaymentStatus,
-} from "react-native-moyasar-sdk";
+import Base64 from "react-native-base64";
 import { WebView } from "react-native-webview";
 
-const MOYASAR_PUBLISHABLE_KEY = "pk_test_Y58doGbqLt0ZIRB47yNWAPKz";
+const MOYASAR_API_URL = "https://api.moyasar.com/v1/payments";
+const MOYASAR_PUBLISHABLE_KEY =
+  "pk_test_iCcpYKAVDAYtms1N33EX2KZ2C5ijdxdYorRtWhS5";
+
+const REQUEST_TIMEOUT = 45000;
+const MAX_RETRIES = 3;
+
+const generateUUID = () => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+const createAuthHeader = () => {
+  const credentials = `${MOYASAR_PUBLISHABLE_KEY}:`;
+  const base64 = Base64.encode(credentials);
+  return `Basic ${base64}`;
+};
 
 export default function PaymentScreen() {
   const params = useLocalSearchParams();
@@ -51,14 +65,11 @@ export default function PaymentScreen() {
   const { confirmPayment, isLoading: isConfirming } = useConfirmPayment();
 
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // ⬅️ للتعامل مع 3DS
   const [show3DSModal, setShow3DSModal] = useState(false);
   const [transactionUrl, setTransactionUrl] = useState("");
   const [currentPaymentId, setCurrentPaymentId] = useState("");
-
-  // ⬅️ لحفظ payment ID للـ idempotency
   const paymentIdempotencyRef = useRef<string | null>(null);
+  const retryCountRef = useRef(0);
 
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
@@ -90,31 +101,28 @@ export default function PaymentScreen() {
       currentLanguage === "ar"
         ? "بيانات بطاقتك محمية بالكامل. لن نقوم بحفظ أي بيانات للبطاقة"
         : "Your card data is fully protected. We will not save any card information",
-    error: currentLanguage === "ar" ? "خطأ" : "Error",
     invalidData:
       currentLanguage === "ar"
         ? "يرجى التحقق من البيانات المدخلة"
         : "Please check entered data",
     cardNumberError:
       currentLanguage === "ar"
-        ? "رقم البطاقة يجب أن يكون 16 رقم"
-        : "Card number must be 16 digits",
+        ? "رقم البطاقة يجب أن يكون 16-19 رقم"
+        : "Card number must be 16-19 digits",
     cardNameError:
       currentLanguage === "ar"
-        ? "يرجى إدخال الاسم كما هو على البطاقة"
-        : "Please enter name as on card",
+        ? "يرجى إدخال الاسم الأول والأخير (اسمين على الأقل)"
+        : "Please enter first and last name (at least 2 names)",
     invalidMonth: currentLanguage === "ar" ? "شهر غير صحيح" : "Invalid month",
     expiredYear: currentLanguage === "ar" ? "سنة منتهية" : "Expired year",
     cvvError:
       currentLanguage === "ar"
-        ? "CVV يجب أن يكون 3 أرقام"
-        : "CVV must be 3 digits",
+        ? "CVV يجب أن يكون 3-4 أرقام"
+        : "CVV must be 3-4 digits",
     paymentError:
       currentLanguage === "ar"
         ? "حدث خطأ أثناء معالجة الدفع"
         : "Error processing payment",
-    paymentSuccess:
-      currentLanguage === "ar" ? "تم الدفع بنجاح!" : "Payment Successful!",
     bookingConfirmed:
       currentLanguage === "ar"
         ? "تم تأكيد حجزك. يمكنك الآن استلام السيارة من الفرع"
@@ -132,6 +140,16 @@ export default function PaymentScreen() {
       currentLanguage === "ar"
         ? "يرجى إكمال التحقق من خلال البنك"
         : "Please complete bank verification",
+    retrying:
+      currentLanguage === "ar" ? "جاري إعادة المحاولة..." : "Retrying...",
+    timeout:
+      currentLanguage === "ar"
+        ? "انتهت مهلة الاتصال. يرجى التحقق من الاتصال بالإنترنت"
+        : "Connection timeout. Please check your internet connection",
+    networkError:
+      currentLanguage === "ar"
+        ? "خطأ في الاتصال بالإنترنت"
+        : "Network connection error",
   };
 
   const formatCardNumber = (text: string) => {
@@ -144,11 +162,17 @@ export default function PaymentScreen() {
     const newErrors: Record<string, string> = {};
 
     const cleanedCardNumber = cardNumber.replace(/\s/g, "");
-    if (!cleanedCardNumber || cleanedCardNumber.length !== 16) {
+    if (
+      !cleanedCardNumber ||
+      cleanedCardNumber.length < 16 ||
+      cleanedCardNumber.length > 19
+    ) {
       newErrors.cardNumber = t.cardNumberError;
     }
 
-    if (!cardName || cardName.trim().length < 3) {
+    const trimmedName = cardName.trim();
+    const nameParts = trimmedName.split(/\s+/);
+    if (!trimmedName || nameParts.length < 2 || trimmedName.length < 3) {
       newErrors.cardName = t.cardNameError;
     }
 
@@ -157,13 +181,13 @@ export default function PaymentScreen() {
       newErrors.expiryMonth = t.invalidMonth;
     }
 
-    const currentYear = new Date().getFullYear() % 100;
-    const year = parseInt(expiryYear);
-    if (!expiryYear || year < currentYear) {
+    const currentYear = new Date().getFullYear();
+    const fullYear = parseInt("20" + expiryYear);
+    if (!expiryYear || fullYear < currentYear) {
       newErrors.expiryYear = t.expiredYear;
     }
 
-    if (!cvv || cvv.length !== 3) {
+    if (!cvv || cvv.length < 3 || cvv.length > 4) {
       newErrors.cvv = t.cvvError;
     }
 
@@ -171,55 +195,130 @@ export default function PaymentScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // ⬅️ معالجة callback من 3DS WebView
-  const handle3DSCallback = (url: string) => {
-    // عندما يرجع من 3DS، الـ URL سيكون: myapp://payment/callback?id=PAYMENT_ID&status=STATUS
-    if (url.includes("myapp://payment/callback")) {
-      const urlParams = new URLSearchParams(url.split("?")[1]);
-      const status = urlParams.get("status");
-      const paymentId = urlParams.get("id") || currentPaymentId;
+  const resetPaymentState = () => {
+    setIsProcessing(false);
+    retryCountRef.current = 0;
+    paymentIdempotencyRef.current = null;
+  };
 
-      setShow3DSModal(false);
-      setTransactionUrl("");
-
-      if (status === "paid") {
-        handleSuccessfulPayment(paymentId);
-      } else if (status === "failed") {
-        setIsProcessing(false);
-        showError(
-          currentLanguage === "ar"
-            ? "فشل التحقق من البطاقة"
-            : "Card verification failed"
-        );
-      } else {
-        // للتأكد من حالة الدفع، نستدعي API
-        checkPaymentStatus(paymentId);
+  const createMoyasarPayment = async () => {
+    try {
+      if (!booking) {
+        throw new Error("NO_BOOKING");
       }
+      const cleanedCardNumber = cardNumber.replace(/\s+/g, "");
+      const amountInHalalas = Math.round(booking.final_amount * 100);
+
+      if (!paymentIdempotencyRef.current) {
+        paymentIdempotencyRef.current = generateUUID();
+      }
+
+      const paymentData = {
+        given_id: paymentIdempotencyRef.current,
+        amount: amountInHalalas,
+        currency: "SAR",
+        description: `${
+          currentLanguage === "ar" ? "حجز سيارة" : "Car booking"
+        } - ${booking.car?.model?.brand?.name_ar || ""} ${
+          booking.car?.model?.name_ar || ""
+        }`.trim(),
+        callback_url: "https://yourdomain.com/payment/callback", // ✅ غير هذا
+        source: {
+          type: "creditcard",
+          name: cardName.trim(),
+          number: cleanedCardNumber,
+          cvc: cvv,
+          month: parseInt(expiryMonth),
+          year: parseInt("20" + expiryYear),
+        },
+        metadata: {
+          booking_id: String(bookingId),
+          customer_id: String(booking.customer_id || ""),
+          car_id: String(booking.car_id || ""),
+        },
+      };
+
+      // console.log("=== SENDING TO MOYASAR ===");
+      // console.log("Payment Data:", {
+      //   ...paymentData,
+      //   source: {
+      //     ...paymentData.source,
+      //     number: "****" + cleanedCardNumber.slice(-4),
+      //     cvc: "***",
+      //   },
+      // });
+
+      const response = await axios({
+        method: "POST",
+        url: MOYASAR_API_URL,
+        data: paymentData,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: createAuthHeader(),
+        },
+        timeout: 60000,
+        validateStatus: (status) => status < 600,
+      });
+
+      // console.log("=== RESPONSE ===");
+      // console.log("Status:", response.status);
+      // console.log("Data:", JSON.stringify(response.data, null, 2));
+
+      return {
+        response: { status: response.status },
+        result: response.data,
+      };
+    } catch (error) {
+      console.error("=== ERROR DETAILS ===");
+
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          console.error("Status:", error.response.status);
+          console.error(
+            "Error Data:",
+            JSON.stringify(error.response.data, null, 2)
+          );
+
+          // اطبع الأخطاء بالتفصيل
+          if (error.response.data.errors) {
+            console.error("Validation Errors:", error.response.data.errors);
+          }
+
+          return {
+            response: { status: error.response.status },
+            result: error.response.data,
+          };
+        }
+
+        if (error.code === "ECONNABORTED") {
+          throw new Error("TIMEOUT");
+        }
+
+        throw new Error("NETWORK_ERROR");
+      }
+
+      throw error;
     }
   };
 
-  // ⬅️ التحقق من حالة الدفع من API
   const checkPaymentStatus = async (paymentId: string) => {
     try {
-      const response = await fetch(
-        `https://api.moyasar.com/v1/payments/${paymentId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Basic ${btoa(MOYASAR_PUBLISHABLE_KEY + ":")}`,
-          },
-        }
-      );
+      const response = await axios.get(`${MOYASAR_API_URL}/${paymentId}`, {
+        headers: {
+          Authorization: createAuthHeader(),
+        },
+        timeout: REQUEST_TIMEOUT,
+      });
 
-      const payment = await response.json();
+      const payment = response.data;
 
       if (payment.status === "paid") {
-        handleSuccessfulPayment(paymentId);
+        await handleSuccessfulPayment(paymentId);
       } else if (payment.status === "failed") {
-        setIsProcessing(false);
+        resetPaymentState();
         showError(payment.source?.message || t.paymentError);
       } else {
-        setIsProcessing(false);
+        resetPaymentState();
         showWarning(
           currentLanguage === "ar"
             ? "الدفع لا يزال قيد المعالجة"
@@ -228,8 +327,86 @@ export default function PaymentScreen() {
       }
     } catch (error) {
       console.error("Error checking payment status:", error);
-      setIsProcessing(false);
+      resetPaymentState();
       showError(t.paymentError);
+    }
+  };
+
+  const handlePaymentResponse = async (response, result) => {
+    if (response.status === 201) {
+      setCurrentPaymentId(result.id);
+
+      if (result.status === "paid") {
+        await handleSuccessfulPayment(result.id);
+      } else if (result.status === "initiated") {
+        if (result.source?.transaction_url) {
+          setTransactionUrl(result.source.transaction_url);
+          setShow3DSModal(true);
+        } else {
+          resetPaymentState();
+          showError("Missing 3DS verification URL");
+        }
+      } else if (result.status === "failed") {
+        resetPaymentState();
+        showError(result.source?.message || t.paymentError);
+      }
+    } else if (response.status === 400) {
+      const errorMsg =
+        result.message || JSON.stringify(result.errors || result);
+      console.log(result);
+
+      console.error("❌ Validation error:", errorMsg);
+
+      if (errorMsg.includes("already created")) {
+        showWarning(
+          currentLanguage === "ar"
+            ? "تم إنشاء الدفع مسبقاً"
+            : "Payment already created"
+        );
+        if (currentPaymentId) {
+          await checkPaymentStatus(currentPaymentId);
+        }
+        return;
+      }
+
+      resetPaymentState();
+      showError(errorMsg);
+    } else if (response.status >= 500) {
+      throw new Error("SERVER_ERROR");
+    } else {
+      resetPaymentState();
+      showError(result.message || t.paymentError);
+    }
+  };
+
+  const retryPayment = async () => {
+    retryCountRef.current += 1;
+
+    if (retryCountRef.current > MAX_RETRIES) {
+      resetPaymentState();
+      showError(
+        currentLanguage === "ar"
+          ? "فشلت جميع محاولات الدفع"
+          : "All payment attempts failed"
+      );
+      return;
+    }
+
+    showWarning(`${t.retrying} (${retryCountRef.current}/${MAX_RETRIES})`);
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 2000 * retryCountRef.current)
+    );
+
+    try {
+      const { response, result } = await createMoyasarPayment();
+      await handlePaymentResponse(response, result);
+    } catch (error) {
+      if (error.message === "SERVER_ERROR") {
+        await retryPayment();
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -245,157 +422,91 @@ export default function PaymentScreen() {
     }
 
     setIsProcessing(true);
+    retryCountRef.current = 0;
 
     try {
-      const cleanedCardNumber = cardNumber.replace(/\s/g, "");
-      const amountInHalalas = Math.round(booking.final_amount * 100);
-      // Add this helper function in your file
-      const generateUUID = () => {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0;
-          const v = c === "x" ? r : (r & 0x3) | 0x8;
-          return v.toString(16);
-        });
-      };
+      const { response, result } = await createMoyasarPayment();
+      await handlePaymentResponse(response, result);
+    } catch (error) {
+      console.error("💥 Payment Error:", error);
 
-      // ⬅️ توليد UUID للـ idempotency (أو استخدام القديم إذا كان موجود)
-      if (!paymentIdempotencyRef.current) {
-        paymentIdempotencyRef.current = generateUUID();
-      }
-
-      const ccSource = new CreditCardRequestSource({
-        name: cardName.trim(),
-        number: cleanedCardNumber,
-        cvc: cvv,
-        month: expiryMonth,
-        year: "20" + expiryYear,
-        tokenizeCard: false,
-        manualPayment: false,
-      });
-
-      const paymentRequest = new PaymentRequest({
-        amount: amountInHalalas,
-        currency: "SAR",
-        description: `${
-          currentLanguage === "ar" ? "حجز سيارة" : "Car booking"
-        } - ${booking.car?.model?.brand?.name_ar} ${
-          booking.car?.model?.name_ar
-        }`,
-        metadata: {
-          booking_id: bookingId,
-          customer_id: booking.customer_id,
-          car_id: booking.car_id,
-        },
-        source: ccSource,
-        callbackUrl: "myapp://payment/callback",
-        applyCoupon: true,
-      });
-
-      // إضافة given_id للـ idempotency
-      (paymentRequest as any).given_id = paymentIdempotencyRef.current;
-
-      const paymentResponse = await Promise.race([
-        createPayment(paymentRequest, MOYASAR_PUBLISHABLE_KEY),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Payment timeout - please try again")),
-            120000
-          )
-        ),
-      ]);
-
-      if (paymentResponse instanceof PaymentResponse) {
-        setCurrentPaymentId(paymentResponse.id);
-
-        if (paymentResponse.status === PaymentStatus.paid) {
-          // ✅ الدفع نجح مباشرة
-          handleSuccessfulPayment(paymentResponse.id);
-        } else if (paymentResponse.status === PaymentStatus.initiated) {
-          // ⬅️ يحتاج 3DS verification - نفتح WebView
-          if (paymentResponse.source?.transaction_url) {
-            setTransactionUrl(paymentResponse.source.transaction_url);
-            setShow3DSModal(true);
-          } else {
-            throw new Error("Missing 3DS verification URL");
-          }
-        } else if (paymentResponse.status === PaymentStatus.failed) {
-          throw new Error(paymentResponse.source?.message || t.paymentError);
+      if (error.message === "SERVER_ERROR") {
+        try {
+          await retryPayment();
+        } catch (retryError) {
+          resetPaymentState();
+          showError(t.paymentError);
         }
-      } else {
-        throw new Error(t.paymentError);
+        return;
       }
-    } catch (error: any) {
-      console.error("Payment Error:", error);
-      setIsProcessing(false);
+
+      resetPaymentState();
 
       let errorMessage = t.paymentError;
 
-      if (error.message) {
-        if (error.message.includes("timeout")) {
-          errorMessage =
-            currentLanguage === "ar"
-              ? "انتهت مهلة الدفع. يرجى المحاولة مرة أخرى"
-              : "Payment timeout. Please try again";
-        } else if (error.message.includes("card")) {
-          errorMessage =
-            currentLanguage === "ar"
-              ? "بيانات البطاقة غير صحيحة"
-              : "Invalid card data";
-        } else if (error.message.includes("insufficient")) {
-          errorMessage =
-            currentLanguage === "ar"
-              ? "رصيد غير كافٍ في البطاقة"
-              : "Insufficient card balance";
-        } else if (error.message.includes("declined")) {
-          errorMessage =
-            currentLanguage === "ar"
-              ? "تم رفض البطاقة من قبل البنك"
-              : "Card declined by bank";
-        } else if (error.message.includes("already created")) {
-          // ⬅️ معالجة حالة الدفع المكرر
-          errorMessage =
-            currentLanguage === "ar"
-              ? "تم إنشاء الدفع مسبقاً. جاري التحقق..."
-              : "Payment already created. Checking status...";
-          if (currentPaymentId) {
-            checkPaymentStatus(currentPaymentId);
-          }
-          return;
-        } else {
-          errorMessage = error.message;
-        }
+      if (error.message === "TIMEOUT") {
+        errorMessage = t.timeout;
+      } else if (error.message === "NETWORK_ERROR") {
+        errorMessage = t.networkError;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
       showError(errorMessage);
-      // ⬅️ إعادة تعيين idempotency key عند الفشل الحقيقي
-      paymentIdempotencyRef.current = null;
+    }
+  };
+
+  const handle3DSCallback = (url: string) => {
+    if (url.includes("myapp://payment/callback")) {
+      const urlParams = new URLSearchParams(url.split("?")[1]);
+      const status = urlParams.get("status");
+      const paymentId = urlParams.get("id") || currentPaymentId;
+
+      setShow3DSModal(false);
+      setTransactionUrl("");
+
+      if (status === "paid") {
+        handleSuccessfulPayment(paymentId);
+      } else if (status === "failed") {
+        resetPaymentState();
+        showError(
+          currentLanguage === "ar"
+            ? "فشل التحقق من البطاقة"
+            : "Card verification failed"
+        );
+      } else {
+        checkPaymentStatus(paymentId);
+      }
     }
   };
 
   const handleSuccessfulPayment = async (paymentId: string) => {
-    await confirmPayment(
-      { bookingId, paymentReference: paymentId },
-      {
-        onSuccess: () => {
-          setIsProcessing(false);
-          showSuccess(t.bookingConfirmed);
-          // ⬅️ مسح البيانات بعد النجاح
-          paymentIdempotencyRef.current = null;
-          router.replace({
-            pathname: `/screens/BookingDetailsScreen`,
-            params: { bookingId: bookingId },
-          });
-        },
-        onError: (error) => {
-          setIsProcessing(false);
-          showWarning(
-            currentLanguage === "ar"
-              ? "تم الدفع بنجاح ولكن حدث خطأ في تحديث البيانات"
-              : "Payment successful but error updating data"
-          );
-        },
-      }
-    );
+    try {
+      await confirmPayment(
+        { bookingId, paymentReference: paymentId },
+        {
+          onSuccess: () => {
+            resetPaymentState();
+            showSuccess(t.bookingConfirmed);
+            router.replace({
+              pathname: `/screens/BookingDetailsScreen`,
+              params: { bookingId: bookingId },
+            });
+          },
+          onError: (error) => {
+            resetPaymentState();
+            showWarning(
+              currentLanguage === "ar"
+                ? "تم الدفع بنجاح ولكن حدث خطأ في تحديث البيانات"
+                : "Payment successful but error updating data"
+            );
+          },
+        }
+      );
+    } catch (error) {
+      resetPaymentState();
+      showError(t.paymentError);
+    }
   };
 
   const createStyles = () =>
@@ -618,7 +729,6 @@ export default function PaymentScreen() {
         textAlign: "center",
         lineHeight: responsive.getFontSize(12, 11, 14) * 1.5,
       },
-      // ⬅️ Styles للـ 3DS Modal
       modalContainer: {
         flex: 1,
         backgroundColor: colors.background,
@@ -666,7 +776,7 @@ export default function PaymentScreen() {
     );
   }
 
-  if (!booking || booking.status !== "confirmed") {
+  if (!booking) {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>{t.cannotPay}</Text>
@@ -679,7 +789,9 @@ export default function PaymentScreen() {
     );
   }
 
-  const carName = `${booking.car?.model?.brand?.name_ar} ${booking.car?.model?.name_ar}`;
+  const carName = `${booking.car?.model?.brand?.name_ar || ""} ${
+    booking.car?.model?.name_ar || ""
+  }`.trim();
 
   return (
     <>
@@ -695,7 +807,6 @@ export default function PaymentScreen() {
           style={styles.container}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Booking Summary */}
           <View style={styles.section}>
             <Card type="default">
               <Card.Content>
@@ -751,7 +862,6 @@ export default function PaymentScreen() {
             </Card>
           </View>
 
-          {/* Accepted Cards */}
           <View style={styles.section}>
             <Card type="default">
               <Card.Content>
@@ -771,13 +881,11 @@ export default function PaymentScreen() {
             </Card>
           </View>
 
-          {/* Card Details */}
           <View style={styles.section}>
             <Card type="default">
               <Card.Content>
                 <Text style={styles.sectionTitle}>{t.cardDetails}</Text>
 
-                {/* Card Number */}
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>{t.cardNumber}</Text>
                   <TextInput
@@ -800,13 +908,13 @@ export default function PaymentScreen() {
                     maxLength={19}
                     textAlign="left"
                     placeholderTextColor={colors.textMuted}
+                    editable={!isProcessing}
                   />
                   {errors.cardNumber && (
                     <Text style={styles.errorText}>{errors.cardNumber}</Text>
                   )}
                 </View>
 
-                {/* Card Name */}
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>{t.cardName}</Text>
                   <TextInput
@@ -822,13 +930,13 @@ export default function PaymentScreen() {
                     autoCapitalize="characters"
                     textAlign="left"
                     placeholderTextColor={colors.textMuted}
+                    editable={!isProcessing}
                   />
                   {errors.cardName && (
                     <Text style={styles.errorText}>{errors.cardName}</Text>
                   )}
                 </View>
 
-                {/* Expiry Date and CVV */}
                 <View style={styles.row}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.inputLabel}>{t.expiryDate}</Text>
@@ -850,6 +958,7 @@ export default function PaymentScreen() {
                         keyboardType="number-pad"
                         maxLength={2}
                         placeholderTextColor={colors.textMuted}
+                        editable={!isProcessing}
                       />
                       <Text style={styles.slash}>/</Text>
                       <TextInput
@@ -869,6 +978,7 @@ export default function PaymentScreen() {
                         keyboardType="number-pad"
                         maxLength={2}
                         placeholderTextColor={colors.textMuted}
+                        editable={!isProcessing}
                       />
                     </View>
                     {(errors.expiryMonth || errors.expiryYear) && (
@@ -885,17 +995,18 @@ export default function PaymentScreen() {
                       value={cvv}
                       onChangeText={(text) => {
                         const cleaned = text.replace(/[^\d]/g, "");
-                        setCvv(cleaned.substring(0, 3));
+                        setCvv(cleaned.substring(0, 4));
                         if (errors.cvv) {
                           setErrors({ ...errors, cvv: "" });
                         }
                       }}
                       placeholder="123"
                       keyboardType="number-pad"
-                      maxLength={3}
+                      maxLength={4}
                       secureTextEntry
                       textAlign="center"
                       placeholderTextColor={colors.textMuted}
+                      editable={!isProcessing}
                     />
                     {errors.cvv && (
                       <Text style={styles.errorText}>{errors.cvv}</Text>
@@ -908,7 +1019,6 @@ export default function PaymentScreen() {
             </Card>
           </View>
 
-          {/* Pay Button */}
           <View style={styles.section}>
             <CustomButton
               title={`${t.pay} ${booking.final_amount} ${t.sar}`}
@@ -919,21 +1029,19 @@ export default function PaymentScreen() {
             />
           </View>
 
-          {/* Security Info */}
           <View style={styles.securityInfo}>
             <Text style={styles.securityInfoText}>{t.securityInfo}</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ⬅️ 3DS Modal */}
       <Modal
         visible={show3DSModal}
         animationType="slide"
         presentationStyle="fullScreen"
         onRequestClose={() => {
           setShow3DSModal(false);
-          setIsProcessing(false);
+          resetPaymentState();
         }}
       >
         <View style={styles.modalContainer}>
@@ -944,8 +1052,16 @@ export default function PaymentScreen() {
           <View style={styles.webviewContainer}>
             <WebView
               source={{ uri: transactionUrl }}
+              originWhitelist={["*"]} // ✅ أضف هذا
               onNavigationStateChange={(navState) => {
                 handle3DSCallback(navState.url);
+              }}
+              onError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.error("WebView error:", nativeEvent);
+                setShow3DSModal(false);
+                resetPaymentState();
+                showError(t.networkError);
               }}
               startInLoadingState
               renderLoading={() => (

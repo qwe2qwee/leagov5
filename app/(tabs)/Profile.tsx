@@ -273,7 +273,7 @@ export default function ProfileScreen() {
       currentLanguage === "ar"
         ? "حدث خطأ في تسجيل الخروج"
         : "Error signing out",
-    welcomeGuest: currentLanguage === "ar" ? "مرحباً زائر" : "Welcome Guest",
+    welcomeGuest: currentLanguage === "ar" ? "مرحباً بك" : "Welcome ",
     signInToAccess:
       currentLanguage === "ar"
         ? "قم بتسجيل الدخول للوصول إلى جميع الميزات"
@@ -490,16 +490,15 @@ export default function ProfileScreen() {
         ) : (
           <>
             {/* Guest Card */}
-            <Card type="default" style={styles.card}>
-              <Ionicons
-                name="person-circle-outline"
-                // Better constrained guest icon size for phones
-                size={responsive.getResponsiveValue(50, 60, 70, 80, 90)}
-                color={colors.textSecondary}
-              />
+            <Card
+              type="default"
+              style={{
+                ...styles.card,
+                padding: responsive.getResponsiveValue(24, 28, 30, 32, 34),
+              }}
+            >
               <Text style={styles.guestTitle}>{t.welcomeGuest}</Text>
               <Text style={styles.guestSubtitle}>{t.signInToAccess}</Text>
-
               <CustomButton
                 title={t.signIn}
                 bgVariant="primary"
