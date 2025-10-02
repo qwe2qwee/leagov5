@@ -113,7 +113,15 @@ export default function RootLayout() {
           <Stack.Screen
             name="screens/Language"
             options={{ headerShown: false }}
-          />{" "}
+          />
+          <Stack.Screen
+            name="screens/BookingDetailsScreen"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="screens/PaymentScreen"
+            options={{ headerShown: false }}
+          />
           <Stack.Screen name="screens/Help" options={{ headerShown: false }} />{" "}
           <Stack.Screen name="screens/About" options={{ headerShown: false }} />
         </Stack>

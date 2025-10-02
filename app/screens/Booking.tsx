@@ -532,6 +532,7 @@ const BookingScreen: React.FC = () => {
   }, []);
 
   // Handle form submission
+  // Handle form submission
   const handleSubmit = useCallback(async () => {
     if (!car || !bestOffer) return;
 
@@ -579,7 +580,7 @@ const BookingScreen: React.FC = () => {
           p_end: formData.endDate,
           p_daily_rate: car.daily_price || 0,
           p_discount_amount: bestOffer.savings_amount || 0,
-          p_initial_status: "payment_pending",
+          p_initial_status: "pending", // ⬅️ التغيير الوحيد: من payment_pending إلى pending
           p_notes: null,
         }
       );
@@ -622,8 +623,8 @@ const BookingScreen: React.FC = () => {
       Alert.alert(
         t.bookingSuccess,
         currentLanguage === "ar"
-          ? "سيتم التواصل معك قريباً لتأكيد الحجز"
-          : "We will contact you soon to confirm the booking"
+          ? "تم إرسال طلب الحجز بنجاح! في انتظار موافقة الفرع"
+          : "Booking request sent successfully! Waiting for branch approval"
       );
 
       back();

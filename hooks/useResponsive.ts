@@ -123,7 +123,6 @@ export function useResponsive() {
     const getModalPosition = () => {
       const modalHeight = Math.min(availableHeight * 0.8, 600);
       const modalWidth = Math.min(width * 0.9, 400);
-
       return {
         width: modalWidth,
         height: modalHeight,
