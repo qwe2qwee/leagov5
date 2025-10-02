@@ -11,11 +11,12 @@ import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useToast } from "@/store/useToastStore";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -30,8 +31,9 @@ import {
   PaymentResponse,
   PaymentStatus,
 } from "react-native-moyasar-sdk";
+import { WebView } from "react-native-webview";
+import { v4 as uuidv4 } from "uuid"; // ⬅️ لـ idempotency
 
-// Moyasar key from environment variables
 const MOYASAR_PUBLISHABLE_KEY = "pk_test_Y58doGbqLt0ZIRB47yNWAPKz";
 
 export default function PaymentScreen() {
@@ -51,14 +53,19 @@ export default function PaymentScreen() {
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Card fields
+  // ⬅️ للتعامل مع 3DS
+  const [show3DSModal, setShow3DSModal] = useState(false);
+  const [transactionUrl, setTransactionUrl] = useState("");
+  const [currentPaymentId, setCurrentPaymentId] = useState("");
+
+  // ⬅️ لحفظ payment ID للـ idempotency
+  const paymentIdempotencyRef = useRef<string | null>(null);
+
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
   const [expiryMonth, setExpiryMonth] = useState("");
   const [expiryYear, setExpiryYear] = useState("");
   const [cvv, setCvv] = useState("");
-
-  // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const t = {
@@ -118,16 +125,22 @@ export default function PaymentScreen() {
         ? "لا يمكن إتمام الدفع. تحقق من حالة الحجز"
         : "Cannot complete payment. Check booking status",
     back: currentLanguage === "ar" ? "العودة" : "Go Back",
+    verifying3DS:
+      currentLanguage === "ar"
+        ? "جاري التحقق من البطاقة..."
+        : "Verifying your card...",
+    complete3DS:
+      currentLanguage === "ar"
+        ? "يرجى إكمال التحقق من خلال البنك"
+        : "Please complete bank verification",
   };
 
-  // Format card number with spaces
   const formatCardNumber = (text: string) => {
     const cleaned = text.replace(/\s/g, "");
     const formatted = cleaned.match(/.{1,4}/g)?.join(" ") || cleaned;
     return formatted.substring(0, 19);
   };
 
-  // Validation
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
@@ -159,24 +172,89 @@ export default function PaymentScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handlePayment = async () => {
-    setIsProcessing(true); // ⬅️ انقله لأول سطر
+  // ⬅️ معالجة callback من 3DS WebView
+  const handle3DSCallback = (url: string) => {
+    // عندما يرجع من 3DS، الـ URL سيكون: myapp://payment/callback?id=PAYMENT_ID&status=STATUS
+    if (url.includes("myapp://payment/callback")) {
+      const urlParams = new URLSearchParams(url.split("?")[1]);
+      const status = urlParams.get("status");
+      const paymentId = urlParams.get("id") || currentPaymentId;
 
+      setShow3DSModal(false);
+      setTransactionUrl("");
+
+      if (status === "paid") {
+        handleSuccessfulPayment(paymentId);
+      } else if (status === "failed") {
+        setIsProcessing(false);
+        showError(
+          currentLanguage === "ar"
+            ? "فشل التحقق من البطاقة"
+            : "Card verification failed"
+        );
+      } else {
+        // للتأكد من حالة الدفع، نستدعي API
+        checkPaymentStatus(paymentId);
+      }
+    }
+  };
+
+  // ⬅️ التحقق من حالة الدفع من API
+  const checkPaymentStatus = async (paymentId: string) => {
+    try {
+      const response = await fetch(
+        `https://api.moyasar.com/v1/payments/${paymentId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${btoa(MOYASAR_PUBLISHABLE_KEY + ":")}`,
+          },
+        }
+      );
+
+      const payment = await response.json();
+
+      if (payment.status === "paid") {
+        handleSuccessfulPayment(paymentId);
+      } else if (payment.status === "failed") {
+        setIsProcessing(false);
+        showError(payment.source?.message || t.paymentError);
+      } else {
+        setIsProcessing(false);
+        showWarning(
+          currentLanguage === "ar"
+            ? "الدفع لا يزال قيد المعالجة"
+            : "Payment is still processing"
+        );
+      }
+    } catch (error) {
+      console.error("Error checking payment status:", error);
+      setIsProcessing(false);
+      showError(t.paymentError);
+    }
+  };
+
+  const handlePayment = async () => {
     if (!validateForm()) {
       showError(t.invalidData);
-      setIsProcessing(false); // ⬅️ أضف هنا أيضاً
       return;
     }
 
     if (!booking) {
       showError(t.cannotPay);
-      setIsProcessing(false);
       return;
     }
+
+    setIsProcessing(true);
 
     try {
       const cleanedCardNumber = cardNumber.replace(/\s/g, "");
       const amountInHalalas = Math.round(booking.final_amount * 100);
+
+      // ⬅️ توليد UUID للـ idempotency (أو استخدام القديم إذا كان موجود)
+      if (!paymentIdempotencyRef.current) {
+        paymentIdempotencyRef.current = uuidv4();
+      }
 
       const ccSource = new CreditCardRequestSource({
         name: cardName.trim(),
@@ -202,32 +280,37 @@ export default function PaymentScreen() {
           car_id: booking.car_id,
         },
         source: ccSource,
-        callbackUrl: "myapp://payment/callback", // ⬅️ أضف هذا لـ 3DS
+        callbackUrl: "myapp://payment/callback",
         applyCoupon: true,
       });
 
-      // إضافة timeout للحماية من التعليق
+      // إضافة given_id للـ idempotency
+      (paymentRequest as any).given_id = paymentIdempotencyRef.current;
+
       const paymentResponse = await Promise.race([
         createPayment(paymentRequest, MOYASAR_PUBLISHABLE_KEY),
-        new Promise(
-          (_, reject) =>
-            setTimeout(
-              () => reject(new Error("Payment timeout - please try again")),
-              120000
-            ) // دقيقتين
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Payment timeout - please try again")),
+            120000
+          )
         ),
       ]);
 
       if (paymentResponse instanceof PaymentResponse) {
+        setCurrentPaymentId(paymentResponse.id);
+
         if (paymentResponse.status === PaymentStatus.paid) {
+          // ✅ الدفع نجح مباشرة
           handleSuccessfulPayment(paymentResponse.id);
         } else if (paymentResponse.status === PaymentStatus.initiated) {
-          showWarning(
-            currentLanguage === "ar"
-              ? "يرجى إكمال التحقق من خلال البنك"
-              : "Please complete verification through your bank"
-          );
-          setIsProcessing(false);
+          // ⬅️ يحتاج 3DS verification - نفتح WebView
+          if (paymentResponse.source?.transaction_url) {
+            setTransactionUrl(paymentResponse.source.transaction_url);
+            setShow3DSModal(true);
+          } else {
+            throw new Error("Missing 3DS verification URL");
+          }
         } else if (paymentResponse.status === PaymentStatus.failed) {
           throw new Error(paymentResponse.source?.message || t.paymentError);
         }
@@ -261,12 +344,24 @@ export default function PaymentScreen() {
             currentLanguage === "ar"
               ? "تم رفض البطاقة من قبل البنك"
               : "Card declined by bank";
+        } else if (error.message.includes("already created")) {
+          // ⬅️ معالجة حالة الدفع المكرر
+          errorMessage =
+            currentLanguage === "ar"
+              ? "تم إنشاء الدفع مسبقاً. جاري التحقق..."
+              : "Payment already created. Checking status...";
+          if (currentPaymentId) {
+            checkPaymentStatus(currentPaymentId);
+          }
+          return;
         } else {
           errorMessage = error.message;
         }
       }
 
       showError(errorMessage);
+      // ⬅️ إعادة تعيين idempotency key عند الفشل الحقيقي
+      paymentIdempotencyRef.current = null;
     }
   };
 
@@ -277,6 +372,8 @@ export default function PaymentScreen() {
         onSuccess: () => {
           setIsProcessing(false);
           showSuccess(t.bookingConfirmed);
+          // ⬅️ مسح البيانات بعد النجاح
+          paymentIdempotencyRef.current = null;
           router.replace({
             pathname: `/screens/BookingDetailsScreen`,
             params: { bookingId: bookingId },
@@ -514,6 +611,42 @@ export default function PaymentScreen() {
         textAlign: "center",
         lineHeight: responsive.getFontSize(12, 11, 14) * 1.5,
       },
+      // ⬅️ Styles للـ 3DS Modal
+      modalContainer: {
+        flex: 1,
+        backgroundColor: colors.background,
+      },
+      modalHeader: {
+        backgroundColor: colors.primary,
+        paddingHorizontal: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+        paddingTop:
+          responsive.safeAreaTop +
+          responsive.getResponsiveValue(12, 16, 20, 24, 28),
+        paddingBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      },
+      modalTitle: {
+        fontSize: responsive.getFontSize(18, 17, 20),
+        fontFamily: fonts.Bold || fonts.SemiBold,
+        color: colors.textInverse,
+        flex: 1,
+        textAlign: "center",
+      },
+      webviewContainer: {
+        flex: 1,
+      },
+      loadingContainer: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: colors.background + "CC",
+      },
     });
 
   const styles = createStyles();
@@ -542,244 +675,284 @@ export default function PaymentScreen() {
   const carName = `${booking.car?.model?.brand?.name_ar} ${booking.car?.model?.name_ar}`;
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t.title}</Text>
-      </View>
-
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.scrollContent}
+    <>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* Booking Summary */}
-        <View style={styles.section}>
-          <Card type="default">
-            <Card.Content>
-              <Text style={styles.sectionTitle}>{t.bookingSummary}</Text>
-
-              <View style={styles.carInfo}>
-                <Image
-                  source={{ uri: booking.car?.model?.default_image_url }}
-                  style={styles.carImage}
-                  resizeMode="cover"
-                />
-                <View style={styles.carDetails}>
-                  <Text style={styles.carName}>{carName}</Text>
-                  <Text style={styles.carDate}>
-                    {booking.start_date} - {booking.end_date}
-                  </Text>
-                  <Text style={styles.carDays}>
-                    {booking.total_days} {t.days}
-                  </Text>
-                </View>
-              </View>
-
-              <Separator />
-
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>{t.total}</Text>
-                <Text style={styles.priceValue}>
-                  {booking.total_amount} {t.sar}
-                </Text>
-              </View>
-
-              {booking.discount_amount > 0 && (
-                <>
-                  <Separator />
-                  <View style={styles.priceRow}>
-                    <Text style={styles.priceLabel}>{t.discount}</Text>
-                    <Text
-                      style={[styles.priceValue, { color: colors.success }]}
-                    >
-                      -{booking.discount_amount} {t.sar}
-                    </Text>
-                  </View>
-                </>
-              )}
-
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>{t.finalAmount}</Text>
-                <Text style={styles.totalValue}>
-                  {booking.final_amount} {t.sar}
-                </Text>
-              </View>
-            </Card.Content>
-          </Card>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{t.title}</Text>
         </View>
 
-        {/* Accepted Cards */}
-        <View style={styles.section}>
-          <Card type="default">
-            <Card.Content>
-              <Text style={styles.acceptedCardsTitle}>{t.acceptedCards}</Text>
-              <View style={styles.cardLogos}>
-                <View style={styles.cardLogo}>
-                  <Text style={styles.cardLogoText}>مدى</Text>
-                </View>
-                <View style={styles.cardLogo}>
-                  <Text style={styles.cardLogoText}>VISA</Text>
-                </View>
-                <View style={styles.cardLogo}>
-                  <Text style={styles.cardLogoText}>Mastercard</Text>
-                </View>
-              </View>
-            </Card.Content>
-          </Card>
-        </View>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Booking Summary */}
+          <View style={styles.section}>
+            <Card type="default">
+              <Card.Content>
+                <Text style={styles.sectionTitle}>{t.bookingSummary}</Text>
 
-        {/* Card Details */}
-        <View style={styles.section}>
-          <Card type="default">
-            <Card.Content>
-              <Text style={styles.sectionTitle}>{t.cardDetails}</Text>
-
-              {/* Card Number */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>{t.cardNumber}</Text>
-                <TextInput
-                  style={[styles.input, errors.cardNumber && styles.inputError]}
-                  value={cardNumber}
-                  onChangeText={(text) => {
-                    const formatted = formatCardNumber(
-                      text.replace(/[^\d]/g, "")
-                    );
-                    setCardNumber(formatted);
-                    if (errors.cardNumber) {
-                      setErrors({ ...errors, cardNumber: "" });
-                    }
-                  }}
-                  placeholder="1234 5678 9012 3456"
-                  keyboardType="number-pad"
-                  maxLength={19}
-                  textAlign="left"
-                  placeholderTextColor={colors.textMuted}
-                />
-                {errors.cardNumber && (
-                  <Text style={styles.errorText}>{errors.cardNumber}</Text>
-                )}
-              </View>
-
-              {/* Card Name */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>{t.cardName}</Text>
-                <TextInput
-                  style={[styles.input, errors.cardName && styles.inputError]}
-                  value={cardName}
-                  onChangeText={(text) => {
-                    setCardName(text);
-                    if (errors.cardName) {
-                      setErrors({ ...errors, cardName: "" });
-                    }
-                  }}
-                  placeholder="AHMED MOHAMMED"
-                  autoCapitalize="characters"
-                  textAlign="left"
-                  placeholderTextColor={colors.textMuted}
-                />
-                {errors.cardName && (
-                  <Text style={styles.errorText}>{errors.cardName}</Text>
-                )}
-              </View>
-
-              {/* Expiry Date and CVV */}
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>{t.expiryDate}</Text>
-                  <View style={styles.expiryRow}>
-                    <TextInput
-                      style={[
-                        styles.expiryInput,
-                        errors.expiryMonth && styles.inputError,
-                      ]}
-                      value={expiryMonth}
-                      onChangeText={(text) => {
-                        const cleaned = text.replace(/[^\d]/g, "");
-                        setExpiryMonth(cleaned.substring(0, 2));
-                        if (errors.expiryMonth) {
-                          setErrors({ ...errors, expiryMonth: "" });
-                        }
-                      }}
-                      placeholder="MM"
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                    <Text style={styles.slash}>/</Text>
-                    <TextInput
-                      style={[
-                        styles.expiryInput,
-                        errors.expiryYear && styles.inputError,
-                      ]}
-                      value={expiryYear}
-                      onChangeText={(text) => {
-                        const cleaned = text.replace(/[^\d]/g, "");
-                        setExpiryYear(cleaned.substring(0, 2));
-                        if (errors.expiryYear) {
-                          setErrors({ ...errors, expiryYear: "" });
-                        }
-                      }}
-                      placeholder="YY"
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  </View>
-                  {(errors.expiryMonth || errors.expiryYear) && (
-                    <Text style={styles.errorText}>
-                      {errors.expiryMonth || errors.expiryYear}
+                <View style={styles.carInfo}>
+                  <Image
+                    source={{ uri: booking.car?.model?.default_image_url }}
+                    style={styles.carImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.carDetails}>
+                    <Text style={styles.carName}>{carName}</Text>
+                    <Text style={styles.carDate}>
+                      {booking.start_date} - {booking.end_date}
                     </Text>
-                  )}
+                    <Text style={styles.carDays}>
+                      {booking.total_days} {t.days}
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>CVV</Text>
+                <Separator />
+
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>{t.total}</Text>
+                  <Text style={styles.priceValue}>
+                    {booking.total_amount} {t.sar}
+                  </Text>
+                </View>
+
+                {booking.discount_amount > 0 && (
+                  <>
+                    <Separator />
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceLabel}>{t.discount}</Text>
+                      <Text
+                        style={[styles.priceValue, { color: colors.success }]}
+                      >
+                        -{booking.discount_amount} {t.sar}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>{t.finalAmount}</Text>
+                  <Text style={styles.totalValue}>
+                    {booking.final_amount} {t.sar}
+                  </Text>
+                </View>
+              </Card.Content>
+            </Card>
+          </View>
+
+          {/* Accepted Cards */}
+          <View style={styles.section}>
+            <Card type="default">
+              <Card.Content>
+                <Text style={styles.acceptedCardsTitle}>{t.acceptedCards}</Text>
+                <View style={styles.cardLogos}>
+                  <View style={styles.cardLogo}>
+                    <Text style={styles.cardLogoText}>مدى</Text>
+                  </View>
+                  <View style={styles.cardLogo}>
+                    <Text style={styles.cardLogoText}>VISA</Text>
+                  </View>
+                  <View style={styles.cardLogo}>
+                    <Text style={styles.cardLogoText}>Mastercard</Text>
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+          </View>
+
+          {/* Card Details */}
+          <View style={styles.section}>
+            <Card type="default">
+              <Card.Content>
+                <Text style={styles.sectionTitle}>{t.cardDetails}</Text>
+
+                {/* Card Number */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>{t.cardNumber}</Text>
                   <TextInput
-                    style={[styles.input, errors.cvv && styles.inputError]}
-                    value={cvv}
+                    style={[
+                      styles.input,
+                      errors.cardNumber && styles.inputError,
+                    ]}
+                    value={cardNumber}
                     onChangeText={(text) => {
-                      const cleaned = text.replace(/[^\d]/g, "");
-                      setCvv(cleaned.substring(0, 3));
-                      if (errors.cvv) {
-                        setErrors({ ...errors, cvv: "" });
+                      const formatted = formatCardNumber(
+                        text.replace(/[^\d]/g, "")
+                      );
+                      setCardNumber(formatted);
+                      if (errors.cardNumber) {
+                        setErrors({ ...errors, cardNumber: "" });
                       }
                     }}
-                    placeholder="123"
+                    placeholder="1234 5678 9012 3456"
                     keyboardType="number-pad"
-                    maxLength={3}
-                    secureTextEntry
-                    textAlign="center"
+                    maxLength={19}
+                    textAlign="left"
                     placeholderTextColor={colors.textMuted}
                   />
-                  {errors.cvv && (
-                    <Text style={styles.errorText}>{errors.cvv}</Text>
+                  {errors.cardNumber && (
+                    <Text style={styles.errorText}>{errors.cardNumber}</Text>
                   )}
                 </View>
-              </View>
 
-              <Text style={styles.securityNote}>🔒 {t.securityNote}</Text>
-            </Card.Content>
-          </Card>
-        </View>
+                {/* Card Name */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>{t.cardName}</Text>
+                  <TextInput
+                    style={[styles.input, errors.cardName && styles.inputError]}
+                    value={cardName}
+                    onChangeText={(text) => {
+                      setCardName(text);
+                      if (errors.cardName) {
+                        setErrors({ ...errors, cardName: "" });
+                      }
+                    }}
+                    placeholder="AHMED MOHAMMED"
+                    autoCapitalize="characters"
+                    textAlign="left"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                  {errors.cardName && (
+                    <Text style={styles.errorText}>{errors.cardName}</Text>
+                  )}
+                </View>
 
-        {/* Pay Button */}
-        <View style={styles.section}>
-          <CustomButton
-            title={`${t.pay} ${booking.final_amount} ${t.sar}`}
-            bgVariant="success"
-            onPress={handlePayment}
-            loading={isProcessing || isConfirming}
-            disabled={isProcessing || isConfirming}
-          />
-        </View>
+                {/* Expiry Date and CVV */}
+                <View style={styles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>{t.expiryDate}</Text>
+                    <View style={styles.expiryRow}>
+                      <TextInput
+                        style={[
+                          styles.expiryInput,
+                          errors.expiryMonth && styles.inputError,
+                        ]}
+                        value={expiryMonth}
+                        onChangeText={(text) => {
+                          const cleaned = text.replace(/[^\d]/g, "");
+                          setExpiryMonth(cleaned.substring(0, 2));
+                          if (errors.expiryMonth) {
+                            setErrors({ ...errors, expiryMonth: "" });
+                          }
+                        }}
+                        placeholder="MM"
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholderTextColor={colors.textMuted}
+                      />
+                      <Text style={styles.slash}>/</Text>
+                      <TextInput
+                        style={[
+                          styles.expiryInput,
+                          errors.expiryYear && styles.inputError,
+                        ]}
+                        value={expiryYear}
+                        onChangeText={(text) => {
+                          const cleaned = text.replace(/[^\d]/g, "");
+                          setExpiryYear(cleaned.substring(0, 2));
+                          if (errors.expiryYear) {
+                            setErrors({ ...errors, expiryYear: "" });
+                          }
+                        }}
+                        placeholder="YY"
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholderTextColor={colors.textMuted}
+                      />
+                    </View>
+                    {(errors.expiryMonth || errors.expiryYear) && (
+                      <Text style={styles.errorText}>
+                        {errors.expiryMonth || errors.expiryYear}
+                      </Text>
+                    )}
+                  </View>
 
-        {/* Security Info */}
-        <View style={styles.securityInfo}>
-          <Text style={styles.securityInfoText}>{t.securityInfo}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>CVV</Text>
+                    <TextInput
+                      style={[styles.input, errors.cvv && styles.inputError]}
+                      value={cvv}
+                      onChangeText={(text) => {
+                        const cleaned = text.replace(/[^\d]/g, "");
+                        setCvv(cleaned.substring(0, 3));
+                        if (errors.cvv) {
+                          setErrors({ ...errors, cvv: "" });
+                        }
+                      }}
+                      placeholder="123"
+                      keyboardType="number-pad"
+                      maxLength={3}
+                      secureTextEntry
+                      textAlign="center"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                    {errors.cvv && (
+                      <Text style={styles.errorText}>{errors.cvv}</Text>
+                    )}
+                  </View>
+                </View>
+
+                <Text style={styles.securityNote}>{t.securityNote}</Text>
+              </Card.Content>
+            </Card>
+          </View>
+
+          {/* Pay Button */}
+          <View style={styles.section}>
+            <CustomButton
+              title={`${t.pay} ${booking.final_amount} ${t.sar}`}
+              bgVariant="success"
+              onPress={handlePayment}
+              loading={isProcessing || isConfirming}
+              disabled={isProcessing || isConfirming}
+            />
+          </View>
+
+          {/* Security Info */}
+          <View style={styles.securityInfo}>
+            <Text style={styles.securityInfoText}>{t.securityInfo}</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ⬅️ 3DS Modal */}
+      <Modal
+        visible={show3DSModal}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setShow3DSModal(false);
+          setIsProcessing(false);
+        }}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t.complete3DS}</Text>
+          </View>
+
+          <View style={styles.webviewContainer}>
+            <WebView
+              source={{ uri: transactionUrl }}
+              onNavigationStateChange={(navState) => {
+                handle3DSCallback(navState.url);
+              }}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={{ marginTop: 16, color: colors.text }}>
+                    {t.verifying3DS}
+                  </Text>
+                </View>
+              )}
+            />
+          </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }
