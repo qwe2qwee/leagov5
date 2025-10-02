@@ -446,60 +446,71 @@ const BookingScreen: React.FC = () => {
   }, []);
 
   // Calculate pricing with best offer
-  const calculatePricing = useCallback(async () => {
-    if (car && formData.rentalType && actualDays > 0) {
-      try {
-        // Get best offer for this car and rental period
-        const { data: offerData, error: offerError } = await supabase.rpc(
-          "get_best_car_offer",
-          {
-            _car_id: car.car_id,
-            _rental_days: actualDays,
-            _rental_type: formData.rentalType,
-          }
-        );
+  // حساب مدة الإيجار حسب النوع
+  const rentalDuration = useMemo(() => {
+    if (!formData.startDate || !formData.endDate) return 1;
 
-        if (offerError) {
-          console.error("Error getting best offer:", offerError);
-          // Fallback to simple calculation
-          const baseAmount = car.daily_price * actualDays;
-          const discountAmount = car.discount_percentage
-            ? (baseAmount * car.discount_percentage) / 100
-            : 0;
-          setBestOffer({
-            offer_source: "direct_discount",
-            offer_id: null,
-            offer_name_ar: null,
-            offer_name_en: null,
-            discount_type: "percentage",
-            discount_value: car.discount_percentage,
-            original_price: baseAmount,
-            discounted_price: baseAmount - discountAmount,
-            savings_amount: discountAmount,
-          });
-        } else if (offerData && offerData.length > 0) {
-          setBestOffer(offerData[0] as BestOffer);
-        } else {
-          // No offers, use regular price
-          const baseAmount = car.daily_price * actualDays;
-          setBestOffer({
-            offer_source: "regular",
-            offer_id: null,
-            offer_name_ar: null,
-            offer_name_en: null,
-            discount_type: "none",
-            discount_value: 0,
-            original_price: baseAmount,
-            discounted_price: baseAmount,
-            savings_amount: 0,
-          });
+    const start = new Date(formData.startDate);
+    const end = new Date(formData.endDate);
+
+    if (formData.rentalType === "daily") {
+      const diff = Math.ceil(
+        (end.getTime() - start.getTime()) / (1000 * 3600 * 24)
+      );
+      return Math.max(1, diff);
+    }
+
+    if (formData.rentalType === "weekly") {
+      const diff = Math.ceil(
+        (end.getTime() - start.getTime()) / (1000 * 3600 * 24 * 7)
+      );
+      return Math.max(1, diff);
+    }
+
+    if (formData.rentalType === "monthly") {
+      let months = (end.getFullYear() - start.getFullYear()) * 12;
+      months += end.getMonth() - start.getMonth();
+      return Math.max(1, months);
+    }
+
+    return 1;
+  }, [formData.startDate, formData.endDate, formData.rentalType]);
+
+  // تعديل حساب السعر
+  const calculatePricing = useCallback(async () => {
+    if (car && formData.rentalType && rentalDuration > 0) {
+      try {
+        let baseAmount = 0;
+
+        if (formData.rentalType === "daily") {
+          baseAmount = (car.daily_price || 0) * rentalDuration;
+        } else if (formData.rentalType === "weekly") {
+          baseAmount = (car.weekly_price || 0) * rentalDuration;
+        } else if (formData.rentalType === "monthly") {
+          baseAmount = (car.monthly_price || 0) * rentalDuration;
         }
+
+        const discountAmount = car.discount_percentage
+          ? (baseAmount * car.discount_percentage) / 100
+          : 0;
+
+        setBestOffer({
+          offer_source: "direct_discount",
+          offer_id: null,
+          offer_name_ar: null,
+          offer_name_en: null,
+          discount_type: "percentage",
+          discount_value: car.discount_percentage,
+          original_price: baseAmount,
+          discounted_price: baseAmount - discountAmount,
+          savings_amount: discountAmount,
+        });
       } catch (error) {
         console.error("Error calculating pricing:", error);
         setBestOffer(null);
       }
     }
-  }, [car, formData.rentalType, actualDays]);
+  }, [car, formData.rentalType, rentalDuration]);
 
   // Calculate pricing when dependencies change
   useEffect(() => {
