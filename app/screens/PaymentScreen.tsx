@@ -32,7 +32,6 @@ import {
   PaymentStatus,
 } from "react-native-moyasar-sdk";
 import { WebView } from "react-native-webview";
-import { v4 as uuidv4 } from "uuid"; // ⬅️ لـ idempotency
 
 const MOYASAR_PUBLISHABLE_KEY = "pk_test_Y58doGbqLt0ZIRB47yNWAPKz";
 
@@ -250,10 +249,18 @@ export default function PaymentScreen() {
     try {
       const cleanedCardNumber = cardNumber.replace(/\s/g, "");
       const amountInHalalas = Math.round(booking.final_amount * 100);
+      // Add this helper function in your file
+      const generateUUID = () => {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      };
 
       // ⬅️ توليد UUID للـ idempotency (أو استخدام القديم إذا كان موجود)
       if (!paymentIdempotencyRef.current) {
-        paymentIdempotencyRef.current = uuidv4();
+        paymentIdempotencyRef.current = generateUUID();
       }
 
       const ccSource = new CreditCardRequestSource({
