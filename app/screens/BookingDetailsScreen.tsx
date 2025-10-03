@@ -41,6 +41,7 @@ export default function BookingDetailsScreen() {
   const { showSuccess, showError, showWarning } = useToast();
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellationNotes, setCancellationNotes] = useState("");
 
   const bookingId = params.bookingId as string;
 
@@ -147,9 +148,10 @@ export default function BookingDetailsScreen() {
 
   const handleCancelBooking = async () => {
     setShowCancelModal(false);
-    await cancelBooking(bookingId, {
+    await cancelBooking(bookingId, cancellationNotes || undefined, {
       onSuccess: () => {
         showSuccess(t.cancelled);
+        setCancellationNotes("");
         router.back();
       },
       onError: (error) => {
@@ -208,8 +210,9 @@ export default function BookingDetailsScreen() {
         {/* Status Header */}
         <Header statusConfig={statusConfig} onBack={() => router.back()} />
 
-        {/* Timer Alert */}
-        {booking.status === "confirmed" && (
+        {/* Timer Alert - يظهر لـ confirmed و payment_pending */}
+        {(booking.status === "confirmed" ||
+          booking.status === "payment_pending") && (
           <TimerAlert
             formattedTime={formattedTime || ""}
             isExpired={isExpired}
@@ -301,7 +304,10 @@ export default function BookingDetailsScreen() {
         visible={showCancelModal}
         isLoading={isCancelling}
         onConfirm={handleCancelBooking}
-        onCancel={() => setShowCancelModal(false)}
+        onCancel={() => {
+          setShowCancelModal(false);
+          setCancellationNotes("");
+        }}
       />
     </View>
   );

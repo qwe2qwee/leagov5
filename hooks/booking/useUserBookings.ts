@@ -1,6 +1,6 @@
 // ============================================
 // hooks/useBookings.ts
-// React Hooks الأساسية فقط (بدون React Query)
+// React Hooks لتطبيق العميل (محدثة ومتوافقة)
 // ============================================
 
 import { supabase } from "@/lib/supabase";
@@ -218,8 +218,10 @@ export function useBookingDetails(bookingId: string) {
         .eq("id", bookingId)
         .single();
 
+      if (fetchError) throw fetchError;
+
       // جلب معلومات المُوافِق إذا كان موجوداً
-      if (!fetchError && booking?.approved_by) {
+      if (booking?.approved_by) {
         const { data: approverProfile } = await supabase
           .from("profiles")
           .select("full_name, email")
@@ -227,11 +229,10 @@ export function useBookingDetails(bookingId: string) {
           .single();
 
         if (approverProfile) {
-          booking.approved_by_user = approverProfile;
+          (booking as any).approved_by_user = approverProfile;
         }
       }
 
-      if (fetchError) throw fetchError;
       setData(booking as Booking);
     } catch (err) {
       setError(err as Error);
@@ -317,10 +318,9 @@ export function useCreateBooking() {
 }
 
 // ============================================
-// 4. useCancelBooking
+// 4. useCancelBooking (محدث - إضافة notes)
 // ============================================
 
-// hooks/useBookings.ts
 export function useCancelBooking() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -328,6 +328,7 @@ export function useCancelBooking() {
   const cancelBooking = useCallback(
     async (
       bookingId: string,
+      cancellationNotes?: string, // ✅ إضافة parameter
       callbacks?: {
         onSuccess?: (data: Booking) => void;
         onError?: (error: Error) => void;
@@ -341,12 +342,11 @@ export function useCancelBooking() {
           "customer_cancel_booking",
           {
             p_booking_id: bookingId,
+            p_cancellation_notes: cancellationNotes || null, // ✅ تمرير النوتس
           }
         );
 
-        if (rpcError) {
-          throw rpcError;
-        }
+        if (rpcError) throw rpcError;
 
         const bookingData = Array.isArray(data) ? data[0] : data;
 
@@ -370,53 +370,275 @@ export function useCancelBooking() {
     error,
   };
 }
+
 // ============================================
-// 5. useConfirmPayment
+// 5. useCarAvailability (محدث - أفضل من useCheckCarAvailability)
 // ============================================
 
-export function useConfirmPayment() {
+interface UseCarAvailabilityParams {
+  carId: string;
+  startDate: string;
+  endDate: string;
+  enabled?: boolean; // للتحكم في التنفيذ التلقائي
+}
+
+export function useCarAvailability({
+  carId,
+  startDate,
+  endDate,
+  enabled = true,
+}: UseCarAvailabilityParams) {
+  const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [availabilityDetails, setAvailabilityDetails] = useState<{
+    totalQuantity: number;
+    availableQuantity: number;
+    conflictingBookings: number;
+  } | null>(null);
+
+  const checkAvailability = useCallback(async () => {
+    if (!carId || !startDate || !endDate) {
+      setError(new Error("معلومات غير كاملة"));
+      return false;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // استخدام الدالة check_car_availability
+      const { data: availableData, error: rpcError } = await supabase.rpc(
+        "check_car_availability",
+        {
+          _car_id: carId,
+          _start_date: startDate,
+          _end_date: endDate,
+        }
+      );
+
+      if (rpcError) throw rpcError;
+
+      // جلب تفاصيل السيارة
+      const { data: carData, error: carError } = await supabase
+        .from("cars")
+        .select("quantity, available_quantity, status")
+        .eq("id", carId)
+        .single();
+
+      if (carError) throw carError;
+
+      // حساب الحجوزات المتداخلة
+      const { data: conflictingData, error: bookingsError } = await supabase
+        .from("bookings")
+        .select("id, status")
+        .eq("car_id", carId)
+        .in("status", ["pending", "confirmed", "payment_pending", "active"])
+        .or(`and(start_date.lte.${endDate},end_date.gte.${startDate})`);
+
+      if (bookingsError) throw bookingsError;
+
+      setAvailabilityDetails({
+        totalQuantity: carData.quantity,
+        availableQuantity: carData.available_quantity,
+        conflictingBookings: conflictingData?.length || 0,
+      });
+
+      const result = availableData === true && carData.status === "available";
+      setIsAvailable(result);
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "حدث خطأ";
+      setError(new Error(errorMessage));
+      setIsAvailable(false);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [carId, startDate, endDate]);
+
+  useEffect(() => {
+    if (enabled && carId && startDate && endDate) {
+      checkAvailability();
+    }
+  }, [enabled, carId, startDate, endDate, checkAvailability]);
+
+  return {
+    isAvailable,
+    isLoading,
+    error,
+    checkAvailability,
+    availabilityDetails,
+  };
+}
+
+// ============================================
+// 6. usePayment (جديد - مطلوب للدفع)
+// ============================================
+
+interface PaymentResult {
+  success: boolean;
+  status: "paid" | "initiated" | "failed";
+  paymentId?: string;
+  transactionUrl?: string;
+  message?: string;
+  bookingStatus?: string;
+}
+
+export function usePayment() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const confirmPayment = useCallback(
+  const createPayment = useCallback(
     async (
-      params: { bookingId: string; paymentReference: string },
+      bookingId: string,
+      token: string,
       callbacks?: {
-        onSuccess?: (data: Booking) => void;
+        onSuccess?: (result: PaymentResult) => void;
         onError?: (error: Error) => void;
+        on3DSRequired?: (transactionUrl: string) => void;
       }
-    ) => {
+    ): Promise<PaymentResult | null> => {
+      function randomUUID() {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0; // رقم عشوائي من 0 إلى 15
+          const v = c === "x" ? r : (r & 0x3) | 0x8; // تطبيق الـ variant
+          return v.toString(16);
+        });
+      }
+
       try {
         setIsLoading(true);
         setError(null);
 
-        const { data, error: updateError } = await supabase
-          .from("bookings")
-          .update({
-            status: "active",
-            payment_reference: params.paymentReference,
-            expires_at: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", params.bookingId)
-          .in("status", ["confirmed", "payment_pending"])
-          .select()
-          .single();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) throw new Error("يجب تسجيل الدخول");
 
-        if (updateError) {
-          if (updateError.code === "PGRST116") {
-            throw new Error("لا يمكن تأكيد الدفع. تحقق من حالة الحجز");
+        const response = await fetch(
+          `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/create-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              bookingId,
+              token,
+              idempotencyKey: randomUUID(),
+            }),
           }
-          throw updateError;
+        );
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || result.message || "فشل الدفع");
         }
 
-        callbacks?.onSuccess?.(data as Booking);
-        return data as Booking;
+        // حالة نجاح فوري
+        if (result.status === "paid") {
+          callbacks?.onSuccess?.(result);
+          return result;
+        }
+
+        // حالة 3DS مطلوب
+        if (result.status === "initiated" && result.transactionUrl) {
+          callbacks?.on3DSRequired?.(result.transactionUrl);
+          return result;
+        }
+
+        // حالة فشل
+        if (result.status === "failed") {
+          throw new Error(result.message || "فشل الدفع");
+        }
+
+        return result;
       } catch (err) {
         const error = err as Error;
         setError(error);
         callbacks?.onError?.(error);
-        throw error;
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  const checkPaymentStatus = useCallback(
+    async (
+      paymentId: string,
+      bookingId: string,
+      callbacks?: {
+        onSuccess?: (result: PaymentResult) => void;
+        onError?: (error: Error) => void;
+      }
+    ): Promise<PaymentResult | null> => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) throw new Error("يجب تسجيل الدخول");
+
+        const response = await fetch(
+          `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/check-payment-status`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ paymentId, bookingId }),
+          }
+        );
+
+        const result = await response.json();
+
+        // ✅ Log للتشخيص
+        console.log("🔍 checkPaymentStatus result:", result);
+
+        // ✅ تحقق من HTTP status أولاً
+        if (!response.ok) {
+          console.error("❌ HTTP Error:", response.status, result);
+          throw new Error(
+            result.error || result.message || "فشل الاتصال بالسيرفر"
+          );
+        }
+
+        // ✅ تعامل مع جميع الحالات
+        if (result.success && result.status === "paid") {
+          callbacks?.onSuccess?.(result);
+          return result;
+        }
+
+        // ⏳ حالات وسطية (initiated, authorized, etc.)
+        if (result.status === "initiated" || result.status === "authorized") {
+          console.log("⏳ Payment still processing:", result.status);
+          return result; // ✅ لا ترمي error
+        }
+
+        // ❌ حالة فشل مؤكد
+        if (result.status === "failed") {
+          console.log("❌ Payment failed:", result.message);
+          // ✅ ارجع result مع الحالة، لا ترمي error
+          return result;
+        }
+
+        // ⚠️ حالات أخرى
+        console.warn("⚠️ Unknown payment status:", result.status);
+        return result;
+      } catch (err) {
+        const error = err as Error;
+        console.error("❌ checkPaymentStatus error:", error.message);
+        setError(error);
+        callbacks?.onError?.(error);
+        return null;
       } finally {
         setIsLoading(false);
       }
@@ -425,66 +647,99 @@ export function useConfirmPayment() {
   );
 
   return {
-    confirmPayment,
+    createPayment,
+    checkPaymentStatus,
     isLoading,
     error,
   };
 }
 
 // ============================================
-// 6. useCheckCarAvailability
+// 7. useBookingValidation (جديد - مساعد)
 // ============================================
 
-export function useCheckCarAvailability(
-  carId: string,
+interface ValidationRules {
+  minDays?: number;
+  maxDays?: number;
+  minStartDate?: Date;
+  maxStartDate?: Date;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  errors: {
+    startDate?: string;
+    endDate?: string;
+    dates?: string;
+    days?: string;
+  };
+}
+
+export function useBookingValidation(
   startDate: string,
-  endDate: string
-) {
-  const [data, setData] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  endDate: string,
+  rules?: ValidationRules
+): ValidationResult {
+  const [result, setResult] = useState<ValidationResult>({
+    isValid: false,
+    errors: {},
+  });
 
   useEffect(() => {
-    const checkAvailability = async () => {
-      if (!carId || !startDate || !endDate) {
-        setIsLoading(false);
-        return;
-      }
+    const errors: ValidationResult["errors"] = {};
 
-      try {
-        setIsLoading(true);
-        setError(null);
+    if (!startDate || !endDate) {
+      setResult({ isValid: false, errors: { dates: "يجب تحديد التواريخ" } });
+      return;
+    }
 
-        const { data: isAvailable, error: rpcError } = await supabase.rpc(
-          "check_car_availability",
-          {
-            _car_id: carId,
-            _start_date: startDate,
-            _end_date: endDate,
-          }
-        );
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-        if (rpcError) throw rpcError;
-        setData(isAvailable as boolean);
-      } catch (err) {
-        setError(err as Error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // التحقق من أن التاريخ ليس في الماضي
+    if (start < today) {
+      errors.startDate = "لا يمكن الحجز في الماضي";
+    }
 
-    checkAvailability();
-  }, [carId, startDate, endDate]);
+    // التحقق من أن تاريخ النهاية بعد تاريخ البداية
+    if (start >= end) {
+      errors.endDate = "تاريخ النهاية يجب أن يكون بعد تاريخ البداية";
+    }
 
-  return {
-    data,
-    isLoading,
-    error,
-  };
+    // حساب عدد الأيام
+    const days = Math.ceil(
+      (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (rules?.minDays && days < rules.minDays) {
+      errors.days = `الحد الأدنى للحجز هو ${rules.minDays} يوم`;
+    }
+
+    if (rules?.maxDays && days > rules.maxDays) {
+      errors.days = `الحد الأقصى للحجز هو ${rules.maxDays} يوم`;
+    }
+
+    if (rules?.minStartDate && start < rules.minStartDate) {
+      errors.startDate = "تاريخ البداية مبكر جداً";
+    }
+
+    if (rules?.maxStartDate && start > rules.maxStartDate) {
+      errors.startDate = "تاريخ البداية متأخر جداً";
+    }
+
+    setResult({
+      isValid: Object.keys(errors).length === 0,
+      errors,
+    });
+  }, [startDate, endDate, rules]);
+
+  return result;
 }
 
 // ============================================
-// 7. useBookingTimer
+// 8. useBookingTimer
 // ============================================
 
 export function useBookingTimer(expiresAt: string | null | undefined) {
@@ -544,7 +799,7 @@ export function useBookingTimer(expiresAt: string | null | undefined) {
 }
 
 // ============================================
-// 8. useBookingRealtime
+// 9. useBookingRealtime
 // ============================================
 
 export function useBookingRealtime(onUpdate?: () => void) {
@@ -590,7 +845,7 @@ export function useBookingRealtime(onUpdate?: () => void) {
 }
 
 // ============================================
-// 9. useBookingStats
+// 10. useBookingStats
 // ============================================
 
 export function useBookingStats() {
@@ -619,54 +874,4 @@ export function useBookingStats() {
     expired: bookings.filter((b) => b.status === "expired").length,
     totalSpent: bookings.reduce((sum, b) => sum + (b.final_amount || 0), 0),
   };
-}
-
-// ============================================
-// useInitiatePayment - بدء عملية الدفع
-// ============================================
-export function useInitiatePayment() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const initiatePayment = useCallback(
-    async (
-      bookingId: string,
-      callbacks?: {
-        onSuccess?: (data: Booking) => void;
-        onError?: (error: Error) => void;
-      }
-    ) => {
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        const { data, error: updateError } = await supabase
-          .from("bookings")
-          .update({
-            status: "payment_pending",
-            expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", bookingId)
-          .eq("status", "confirmed")
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-
-        callbacks?.onSuccess?.(data as Booking);
-        return data as Booking;
-      } catch (err) {
-        const error = err as Error;
-        setError(error);
-        callbacks?.onError?.(error);
-        throw error;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
-
-  return { initiatePayment, isLoading, error };
 }

@@ -445,37 +445,6 @@ const BookingScreen: React.FC = () => {
     return tomorrow;
   }, []);
 
-  // Calculate pricing with best offer
-  // حساب مدة الإيجار حسب النوع
-  const rentalDuration = useMemo(() => {
-    if (!formData.startDate || !formData.endDate) return 1;
-
-    const start = new Date(formData.startDate);
-    const end = new Date(formData.endDate);
-
-    if (formData.rentalType === "daily") {
-      const diff = Math.ceil(
-        (end.getTime() - start.getTime()) / (1000 * 3600 * 24)
-      );
-      return Math.max(1, diff);
-    }
-
-    if (formData.rentalType === "weekly") {
-      const diff = Math.ceil(
-        (end.getTime() - start.getTime()) / (1000 * 3600 * 24 * 7)
-      );
-      return Math.max(1, diff);
-    }
-
-    if (formData.rentalType === "monthly") {
-      let months = (end.getFullYear() - start.getFullYear()) * 12;
-      months += end.getMonth() - start.getMonth();
-      return Math.max(1, months);
-    }
-
-    return 1;
-  }, [formData.startDate, formData.endDate, formData.rentalType]);
-
   // تعديل حساب السعر
   const calculatePricing = useCallback(async () => {
     if (car && formData.rentalType && formData.duration > 0) {

@@ -1,8 +1,9 @@
-// components/Bookings/BookingCard.tsx - IMPROVED LAYOUT
+// components/Bookings/BookingCard.tsx - UPDATED WITH TIMER
 import { Badge } from "@/components/ui/Badge2";
 import { Card } from "@/components/ui/Card";
 import CustomButton from "@/components/ui/CustomButton";
 import { icons } from "@/constants";
+import { useBookingTimer } from "@/hooks/booking/useUserBookings";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
@@ -18,6 +19,7 @@ interface BookingCardProps {
   onPress: () => void;
   onCancel?: () => void;
   onPay?: () => void;
+  showTimer?: boolean; // جديد
   isCancelling?: boolean;
   translations: {
     from: string;
@@ -25,6 +27,8 @@ interface BookingCardProps {
     sar: string;
     cancel: string;
     payNow: string;
+    viewDetails: string; // جديد
+    statusMessage?: string; // جديد
   };
 }
 
@@ -33,14 +37,19 @@ export const BookingCard: React.FC<BookingCardProps> = ({
   onPress,
   onCancel,
   onPay,
+  showTimer = false,
   isCancelling,
   translations: t,
 }) => {
   const { colors } = useTheme();
   const responsive = useResponsive();
-
   const fonts = useFontFamily();
   const { isRTL, currentLanguage } = useLanguageStore();
+
+  // العداد التنازلي
+  const { formattedTime, isExpired, hoursLeft, minutesLeft } = useBookingTimer(
+    showTimer ? booking.expires_at : null
+  );
 
   const statusConfig = STATUS_CONFIG[booking.status];
   const carName = `${
@@ -50,23 +59,26 @@ export const BookingCard: React.FC<BookingCardProps> = ({
   }`;
   const imageUrl = booking.car?.model?.default_image_url;
 
+  // تحديد لون العداد حسب الوقت المتبقي
+  const getTimerColor = () => {
+    if (isExpired) return colors.error;
+    if (hoursLeft === 0 && minutesLeft < 10) return colors.error;
+    if (hoursLeft < 2) return colors.warning;
+    return colors.success;
+  };
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        // Card wrapper
         cardWrapper: {
           marginBottom: responsive.spacing.md,
         },
-
-        // Main horizontal layout: Image | Content
         mainRow: {
           flexDirection: isRTL ? "row-reverse" : "row",
           gap: responsive.spacing.md,
           justifyContent: "center",
           alignItems: "center",
         },
-
-        // Left side: Car image
         imageSection: {
           width: responsive.getResponsiveValue(100, 110, 120, 130, 140),
           height: responsive.getResponsiveValue(100, 110, 120, 130, 140),
@@ -81,15 +93,11 @@ export const BookingCard: React.FC<BookingCardProps> = ({
           width: "100%",
           height: "100%",
         },
-
-        // Right side: All content
         contentSection: {
           flex: 1,
           justifyContent: "space-between",
           minWidth: 0,
         },
-
-        // Row 1: Car name
         nameRow: {
           marginBottom: responsive.spacing.xs,
         },
@@ -100,14 +108,49 @@ export const BookingCard: React.FC<BookingCardProps> = ({
           lineHeight: Math.round(responsive.getFontSize(17, 16, 19) * 1.35),
           textAlign: isRTL ? "right" : "left",
         },
-
-        // Row 2: Status badge
         statusRow: {
-          marginBottom: responsive.spacing.sm,
+          marginBottom: responsive.spacing.xs,
           alignItems: isRTL ? "flex-end" : "flex-start",
         },
-
-        // Row 3: Date info
+        // رسالة الحالة
+        statusMessageContainer: {
+          marginTop: responsive.spacing.xs,
+          marginBottom: responsive.spacing.xs,
+        },
+        statusMessageText: {
+          fontSize: responsive.getFontSize(12, 11, 13),
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+          textAlign: isRTL ? "right" : "left",
+          lineHeight: Math.round(responsive.getFontSize(12, 11, 13) * 1.4),
+        },
+        // العداد التنازلي
+        timerContainer: {
+          flexDirection: isRTL ? "row-reverse" : "row",
+          alignItems: "center",
+          backgroundColor: colors.backgroundSecondary,
+          paddingHorizontal: responsive.spacing.sm,
+          paddingVertical: responsive.spacing.xs,
+          borderRadius: responsive.getBorderRadius("small"),
+          gap: responsive.spacing.xs,
+          marginBottom: responsive.spacing.sm,
+          borderWidth: 1,
+          borderColor: getTimerColor(),
+        },
+        timerIcon: {
+          marginRight: isRTL ? 0 : responsive.spacing.xxl,
+          marginLeft: isRTL ? responsive.spacing.xxl : 0,
+        },
+        timerText: {
+          fontSize: responsive.getFontSize(13, 12, 14),
+          fontFamily: fonts.SemiBold,
+          color: getTimerColor(),
+        },
+        timerLabel: {
+          fontSize: responsive.getFontSize(11, 10, 12),
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+        },
         dateInfoRow: {
           flexDirection: isRTL ? "row-reverse" : "row",
           alignItems: "center",
@@ -122,8 +165,6 @@ export const BookingCard: React.FC<BookingCardProps> = ({
           flex: 1,
           textAlign: isRTL ? "right" : "left",
         },
-
-        // Row 4: Price and actions
         actionRow: {
           flexDirection: isRTL ? "row-reverse" : "row",
           justifyContent: "space-between",
@@ -142,7 +183,7 @@ export const BookingCard: React.FC<BookingCardProps> = ({
           flexShrink: 0,
         },
       }),
-    [colors, responsive, fonts, isRTL]
+    [colors, responsive, fonts, isRTL, hoursLeft, minutesLeft, isExpired]
   );
 
   return (
@@ -185,6 +226,64 @@ export const BookingCard: React.FC<BookingCardProps> = ({
                 </Badge>
               </View>
 
+              {/* Status Message */}
+              {t.statusMessage && (
+                <View style={styles.statusMessageContainer}>
+                  <Text style={styles.statusMessageText} numberOfLines={2}>
+                    {t.statusMessage}
+                  </Text>
+                </View>
+              )}
+
+              {/* Timer (for confirmed and payment_pending) */}
+              {showTimer && formattedTime && !isExpired && (
+                <View style={styles.timerContainer}>
+                  <Ionicons
+                    name={hoursLeft < 1 ? "alarm-outline" : "time-outline"}
+                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
+                    color={getTimerColor()}
+                    style={styles.timerIcon}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.timerText}>
+                      {isRTL ? "باقي" : "Remaining"} {formattedTime}
+                    </Text>
+                    <Text style={styles.timerLabel}>
+                      {booking.status === "confirmed"
+                        ? isRTL
+                          ? "لإتمام الدفع"
+                          : "to complete payment"
+                        : isRTL
+                        ? "لإتمام عملية الدفع"
+                        : "to finish payment process"}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Expired Warning */}
+              {showTimer && isExpired && (
+                <View
+                  style={[
+                    styles.timerContainer,
+                    {
+                      borderColor: colors.error,
+                      backgroundColor: colors.backgroundSecondary,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
+                    color={colors.error}
+                    style={styles.timerIcon}
+                  />
+                  <Text style={[styles.timerText, { color: colors.error }]}>
+                    {isRTL ? "انتهت المهلة" : "Time Expired"}
+                  </Text>
+                </View>
+              )}
+
               {/* Date Information */}
               <View style={styles.dateInfoRow}>
                 <Ionicons
@@ -220,11 +319,13 @@ export const BookingCard: React.FC<BookingCardProps> = ({
                 </View>
 
                 <View style={styles.actionsContainer}>
-                  {booking.status === "pending" && onCancel && (
+                  {/* زر الإلغاء - للحالات: pending, confirmed, payment_pending */}
+                  {onCancel && (
                     <CustomButton
                       bgVariant="outline"
                       onPress={onCancel}
                       loading={isCancelling}
+                      disabled={isCancelling}
                       style={{
                         paddingHorizontal: responsive.spacing.sm,
                         paddingVertical: responsive.spacing.xs,
@@ -234,12 +335,13 @@ export const BookingCard: React.FC<BookingCardProps> = ({
                     </CustomButton>
                   )}
 
-                  {booking.status === "confirmed" && onPay && (
+                  {/* زر الدفع - للحالات: confirmed, payment_pending */}
+                  {onPay && (
                     <CustomButton
                       bgVariant="primary"
                       onPress={onPay}
                       style={{
-                        paddingHorizontal: responsive.spacing.sm,
+                        paddingHorizontal: responsive.spacing.md,
                         paddingVertical: responsive.spacing.xs,
                       }}
                     >
