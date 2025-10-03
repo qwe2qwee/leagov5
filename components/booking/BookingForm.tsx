@@ -4,7 +4,7 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type RentalType = "daily" | "weekly" | "monthly";
@@ -14,6 +14,12 @@ interface BookingFormData {
   endDate: string;
   rentalType: RentalType;
   duration: number;
+}
+
+interface Prices {
+  daily: number;
+  weekly: number;
+  monthly: number;
 }
 
 interface BookingFormProps {
@@ -30,7 +36,9 @@ interface BookingFormProps {
     selectWeeks: string;
     selectMonths: string;
     tapToSelectDate: string;
+    totalPrice: string; // نص لعرض السعر النهائي
   };
+  prices: Prices; // أسعار السيارة
 }
 
 export default function BookingForm({
@@ -39,6 +47,7 @@ export default function BookingForm({
   onOpenCalendar,
   availableRentalTypes,
   texts,
+  prices,
 }: BookingFormProps) {
   const { colors } = useTheme();
   const responsive = useResponsive();
@@ -68,7 +77,7 @@ export default function BookingForm({
         { value: "2", label: currentLanguage === "ar" ? "شهرين" : "2 Months" },
       ];
     } else if (formData.rentalType === "daily") {
-      return Array.from({ length: 6 }, (_, i) => ({
+      return Array.from({ length: 30 }, (_, i) => ({
         value: (i + 1).toString(),
         label:
           currentLanguage === "ar"
@@ -83,7 +92,6 @@ export default function BookingForm({
   const formatDisplayDate = useCallback(
     (dateString: string) => {
       if (!dateString) return "";
-
       const date = new Date(dateString);
       const options: Intl.DateTimeFormatOptions = {
         weekday: "long",
@@ -91,11 +99,32 @@ export default function BookingForm({
         month: "long",
         day: "numeric",
       };
-
       return date.toLocaleDateString("en-US", options);
     },
     [currentLanguage]
   );
+
+  // Calculate total price
+  const totalPrice = useMemo(() => {
+    const duration = formData.duration || 0;
+    let total = 0;
+
+    switch (formData.rentalType) {
+      case "daily":
+        total = duration * prices.daily;
+        break;
+      case "weekly":
+        total = duration * prices.weekly;
+        break;
+      case "monthly":
+        total = duration * prices.monthly;
+        break;
+      default:
+        total = 0;
+    }
+
+    return total;
+  }, [formData.rentalType, formData.duration, prices]);
 
   const styles = StyleSheet.create({
     formSection: {
@@ -137,6 +166,18 @@ export default function BookingForm({
       marginLeft: isRTL ? 0 : responsive.getResponsiveValue(8, 10, 12, 14, 16),
       marginRight: isRTL ? responsive.getResponsiveValue(8, 10, 12, 14, 16) : 0,
     },
+    totalPriceContainer: {
+      marginTop: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(10, 12, 14, 16, 18),
+      backgroundColor: colors.surface,
+      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+    },
+    totalPriceText: {
+      fontSize: responsive.getFontSize(16, 15, 18),
+      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
+      color: colors.primary,
+      textAlign: isRTL ? "right" : "left",
+    },
   });
 
   return (
@@ -146,12 +187,9 @@ export default function BookingForm({
         <Text style={styles.formLabel}>{texts.rentalType}</Text>
         <Select
           value={formData.rentalType}
-          onValueChange={(value) => {
-            onFormDataChange({
-              rentalType: value as RentalType,
-              duration: 1, // دايم يبدأ بواحد
-            });
-          }}
+          onValueChange={(value) =>
+            onFormDataChange({ rentalType: value as RentalType, duration: 1 })
+          }
         >
           <Select.Trigger placeholder={texts.selectRentalType} />
           <Select.Content>
@@ -164,16 +202,14 @@ export default function BookingForm({
         </Select>
       </View>
 
-      {/* Duration Selection */}
+      {/* Duration */}
       <View style={styles.formSection}>
         <Text style={styles.formLabel}>{texts.duration}</Text>
         <Select
           value={formData.duration.toString()}
-          onValueChange={(value) => {
-            onFormDataChange({
-              duration: parseInt(value),
-            });
-          }}
+          onValueChange={(value) =>
+            onFormDataChange({ duration: parseInt(value) })
+          }
         >
           <Select.Trigger
             placeholder={

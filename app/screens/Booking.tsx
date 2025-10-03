@@ -478,16 +478,16 @@ const BookingScreen: React.FC = () => {
 
   // تعديل حساب السعر
   const calculatePricing = useCallback(async () => {
-    if (car && formData.rentalType && rentalDuration > 0) {
+    if (car && formData.rentalType && formData.duration > 0) {
       try {
         let baseAmount = 0;
 
         if (formData.rentalType === "daily") {
-          baseAmount = (car.daily_price || 0) * rentalDuration;
+          baseAmount = (car.daily_price || 0) * formData.duration;
         } else if (formData.rentalType === "weekly") {
-          baseAmount = (car.weekly_price || 0) * rentalDuration;
+          baseAmount = (car.weekly_price || 0) * formData.duration;
         } else if (formData.rentalType === "monthly") {
-          baseAmount = (car.monthly_price || 0) * rentalDuration;
+          baseAmount = (car.monthly_price || 0) * formData.duration;
         }
 
         const discountAmount = car.discount_percentage
@@ -510,7 +510,7 @@ const BookingScreen: React.FC = () => {
         setBestOffer(null);
       }
     }
-  }, [car, formData.rentalType, rentalDuration]);
+  }, [car, formData.rentalType, formData.duration]);
 
   // Calculate pricing when dependencies change
   useEffect(() => {
@@ -777,6 +777,11 @@ const BookingScreen: React.FC = () => {
               onFormDataChange={handleFormDataChange}
               onOpenCalendar={handleOpenCalendar}
               availableRentalTypes={availableRentalTypes}
+              prices={{
+                daily: car?.daily_price ?? 0,
+                weekly: car?.weekly_price ?? 0,
+                monthly: car?.monthly_price ?? 0,
+              }}
               texts={{
                 rentalType: t.rentalType,
                 duration: t.duration,
@@ -786,6 +791,7 @@ const BookingScreen: React.FC = () => {
                 selectWeeks: t.selectWeeks,
                 selectMonths: t.selectMonths,
                 tapToSelectDate: t.tapToSelectDate,
+                totalPrice: t.totalAmount,
               }}
             />
 
