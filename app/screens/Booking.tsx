@@ -16,10 +16,10 @@ import BookingButton from "@/components/booking/BookingButton";
 import BookingCalendarModal from "@/components/booking/BookingCalendarModal";
 import BookingCarInfo from "@/components/booking/BookingCarInfo";
 import BookingForm from "@/components/booking/BookingForm";
-import BookingHeader from "@/components/booking/BookingHeader";
 import BookingSummary from "@/components/booking/BookingSummary";
 import { Card } from "@/components/ui/Card";
 import CustomButton from "@/components/ui/CustomButton";
+import ScreenHeader from "@/components/ui/ScreenHeader";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
@@ -638,7 +638,7 @@ const BookingScreen: React.FC = () => {
           : "Booking request sent successfully! Waiting for branch approval"
       );
 
-      back();
+      replace("/Bills");
     } catch (error: any) {
       console.error("Booking error:", error);
       Alert.alert(
@@ -754,7 +754,7 @@ const BookingScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <BookingHeader title={t.title} subtitle={t.subtitle} />
+        <ScreenHeader title={t.title} onBack={() => back()} />
 
         {/* Car Details Card */}
         <BookingCarInfo

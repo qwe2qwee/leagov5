@@ -51,9 +51,6 @@ export default function BookingDetailsScreen() {
     refetch,
   } = useBookingDetails(bookingId);
 
-  console.log("Booking Details:", booking);
-  console.log("Booking Error:", error);
-
   const { cancelBooking, isLoading: isCancelling } = useCancelBooking();
   const { formattedTime, isExpired, hoursLeft } = useBookingTimer(
     booking?.expires_at

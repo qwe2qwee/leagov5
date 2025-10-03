@@ -67,6 +67,14 @@ export default function BookingForm({
         },
         { value: "2", label: currentLanguage === "ar" ? "شهرين" : "2 Months" },
       ];
+    } else if (formData.rentalType === "daily") {
+      return Array.from({ length: 6 }, (_, i) => ({
+        value: (i + 1).toString(),
+        label:
+          currentLanguage === "ar"
+            ? `${i + 1} ${i + 1 === 1 ? "يوم" : "أيام"}`
+            : `${i + 1} Day${i + 1 > 1 ? "s" : ""}`,
+      }));
     }
     return [];
   }, [formData.rentalType, currentLanguage]);
@@ -84,10 +92,7 @@ export default function BookingForm({
         day: "numeric",
       };
 
-      return date.toLocaleDateString(
-        currentLanguage === "ar" ? "ar-SA" : "en-US",
-        options
-      );
+      return date.toLocaleDateString("en-US", options);
     },
     [currentLanguage]
   );
@@ -144,7 +149,7 @@ export default function BookingForm({
           onValueChange={(value) => {
             onFormDataChange({
               rentalType: value as RentalType,
-              duration: value === "daily" ? 1 : 1,
+              duration: 1, // دايم يبدأ بواحد
             });
           }}
         >
@@ -160,36 +165,36 @@ export default function BookingForm({
       </View>
 
       {/* Duration Selection */}
-      {formData.rentalType !== "daily" && (
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>{texts.duration}</Text>
-          <Select
-            value={formData.duration.toString()}
-            onValueChange={(value) => {
-              onFormDataChange({
-                duration: parseInt(value),
-              });
-            }}
-          >
-            <Select.Trigger
-              placeholder={
-                formData.rentalType === "weekly"
-                  ? texts.selectWeeks
-                  : texts.selectMonths
-              }
-            />
-            <Select.Content>
-              {getDurationOptions().map((option) => (
-                <Select.Item key={option.value} value={option.value}>
-                  {option.label}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select>
-        </View>
-      )}
+      <View style={styles.formSection}>
+        <Text style={styles.formLabel}>{texts.duration}</Text>
+        <Select
+          value={formData.duration.toString()}
+          onValueChange={(value) => {
+            onFormDataChange({
+              duration: parseInt(value),
+            });
+          }}
+        >
+          <Select.Trigger
+            placeholder={
+              formData.rentalType === "weekly"
+                ? texts.selectWeeks
+                : formData.rentalType === "monthly"
+                ? texts.selectMonths
+                : "اختر الأيام"
+            }
+          />
+          <Select.Content>
+            {getDurationOptions().map((option) => (
+              <Select.Item key={option.value} value={option.value}>
+                {option.label}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select>
+      </View>
 
-      {/* Start Date - Enhanced Date Button */}
+      {/* Start Date */}
       <View style={styles.formSection}>
         <Text style={styles.formLabel}>
           {formData.rentalType === "daily" ? texts.rentalDate : texts.startDate}

@@ -96,27 +96,6 @@ export default function BookingSummary({
 
   return (
     <View>
-      <View style={styles.priceRow}>
-        <Text style={styles.priceLabel}>{texts.dailyPrice}</Text>
-        <Text style={styles.priceValue}>
-          {dailyPrice} {texts.riyal}
-        </Text>
-      </View>
-
-      <View style={styles.priceRow}>
-        <Text style={styles.priceLabel}>{texts.numberOfDays}</Text>
-        <Text style={styles.priceValue}>
-          {actualDays} {texts.days}
-        </Text>
-      </View>
-
-      <View style={styles.priceRow}>
-        <Text style={styles.priceLabel}>{texts.originalPrice}</Text>
-        <Text style={styles.priceValue}>
-          {bestOffer.original_price.toFixed(2)} {texts.riyal}
-        </Text>
-      </View>
-
       {bestOffer.savings_amount > 0 && (
         <View style={styles.priceRow}>
           <Text style={[styles.priceLabel, { color: colors.error }]}>

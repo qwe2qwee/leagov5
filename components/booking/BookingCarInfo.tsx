@@ -174,18 +174,6 @@ export default function BookingCarInfo({
             </Text>
           </View>
         </View>
-
-        <View style={styles.separator} />
-
-        {/* Basic Price Info */}
-        <View style={styles.priceRow}>
-          <Text style={styles.priceLabel}>
-            {currentLanguage === "ar" ? "السعر اليومي:" : "Daily Price:"}
-          </Text>
-          <Text style={styles.priceValue}>
-            {car.daily_price} {riyalLabel}
-          </Text>
-        </View>
       </Card.Content>
     </Card>
   );

@@ -43,7 +43,7 @@ export default function Header({ statusConfig, onBack }: HeaderProps) {
       </Badge>
       <TouchableOpacity style={styles.backButton} onPress={onBack}>
         <Ionicons
-          name={isRTL ? "chevron-forward" : "chevron-back"}
+          name={!isRTL ? "chevron-forward" : "chevron-back"}
           size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
           color={colors.text}
         />

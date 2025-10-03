@@ -286,11 +286,6 @@ export default function ContactUsScreen() {
       paddingHorizontal: responsive.getResponsiveValue(10, 12, 16, 18, 20),
       backgroundColor: colors.backgroundSecondary,
       borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      shadowColor: colors.text,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3.84,
-      elevation: 5,
     },
     backText: {
       fontSize: responsive.getFontSize(14, 13, 16),
