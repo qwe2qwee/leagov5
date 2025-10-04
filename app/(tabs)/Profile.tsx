@@ -103,7 +103,7 @@ const profileSections = {
         icon: "information-circle-outline",
         titleAr: "حول التطبيق",
         titleEn: "About App",
-        route: "/screens/about",
+        route: "/screens/About",
         requiresAuth: false,
       },
       {
@@ -133,7 +133,7 @@ const profileSections = {
         icon: "information-circle-outline",
         titleAr: "حول التطبيق",
         titleEn: "About App",
-        route: "/screens/about",
+        route: "/screens/About",
         requiresAuth: false,
       },
       {

@@ -257,66 +257,6 @@ export function useBookingDetails(bookingId: string) {
 // 3. useCreateBooking
 // ============================================
 
-export function useCreateBooking() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const createBooking = useCallback(
-    async (
-      bookingData: BookingCreateData,
-      callbacks?: {
-        onSuccess?: (data: Booking) => void;
-        onError?: (error: Error) => void;
-      }
-    ) => {
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("يجب تسجيل الدخول أولاً");
-
-        const { data, error: rpcError } = await supabase.rpc(
-          "create_booking_atomic",
-          {
-            p_customer_id: user.id,
-            p_car_id: bookingData.carId,
-            p_branch_id: bookingData.branchId,
-            p_rental_type: bookingData.rentalType,
-            p_start: bookingData.startDate,
-            p_end: bookingData.endDate,
-            p_daily_rate: bookingData.dailyRate,
-            p_discount_amount: bookingData.discountAmount || 0,
-            p_initial_status: "pending",
-            p_notes: bookingData.notes,
-          }
-        );
-
-        if (rpcError) throw rpcError;
-
-        callbacks?.onSuccess?.(data as Booking);
-        return data as Booking;
-      } catch (err) {
-        const error = err as Error;
-        setError(error);
-        callbacks?.onError?.(error);
-        throw error;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
-
-  return {
-    createBooking,
-    isLoading,
-    error,
-  };
-}
-
 // ============================================
 // 4. useCancelBooking (محدث - إضافة notes)
 // ============================================
@@ -875,3 +815,182 @@ export function useBookingStats() {
     totalSpent: bookings.reduce((sum, b) => sum + (b.final_amount || 0), 0),
   };
 }
+
+// ============================================
+// useCreateBooking - مع retry logic
+// ============================================
+
+export function useCreateBooking() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const createBooking = useCallback(
+    async (
+      bookingData: BookingCreateData,
+      callbacks?: {
+        onSuccess?: (data: Booking) => void;
+        onError?: (error: Error) => void;
+      }
+    ) => {
+      const MAX_RETRIES = 2; // محاولتين إضافيتين
+      let lastError: Error | null = null;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          setIsLoading(true);
+          setError(null);
+
+          if (attempt > 0) {
+            console.log(`🔄 Retry attempt ${attempt}/${MAX_RETRIES}`);
+            // انتظر قبل إعادة المحاولة (exponential backoff)
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          }
+
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) throw new Error("يجب تسجيل الدخول أولاً");
+
+          // ============================================
+          // 1. التحقق من التوفر (fresh data)
+          // ============================================
+          console.log(`🔍 Attempt ${attempt + 1}: Checking availability...`);
+
+          const { data: carCheck, error: carError } = await supabase
+            .from("cars")
+            .select("available_quantity, status, branch_id")
+            .eq("id", bookingData.carId)
+            .single();
+
+          if (carError) throw new Error("فشل التحقق من السيارة");
+
+          if (!carCheck) {
+            throw new Error("السيارة غير موجودة");
+          }
+
+          if (carCheck.status !== "available") {
+            // خطأ نهائي - لا retry
+            const error = new Error(`السيارة غير متاحة (${carCheck.status})`);
+            (error as any).noRetry = true;
+            throw error;
+          }
+
+          if (carCheck.available_quantity <= 0) {
+            // قد يكون race condition - جرب مرة أخرى
+            throw new Error("لا توجد كمية متاحة");
+          }
+
+          // تحقق من branch_id
+          if (carCheck.branch_id !== bookingData.branchId) {
+            const error = new Error("خطأ في معلومات الفرع");
+            (error as any).noRetry = true;
+            throw error;
+          }
+
+          // تحقق من التداخل
+          const { data: isAvailable, error: availError } = await supabase.rpc(
+            "check_car_availability",
+            {
+              _car_id: bookingData.carId,
+              _start_date: bookingData.startDate,
+              _end_date: bookingData.endDate,
+            }
+          );
+
+          if (availError) throw new Error("فشل التحقق من التوفر");
+
+          if (!isAvailable) {
+            const error = new Error("السيارة محجوزة في هذه الفترة");
+            (error as any).noRetry = true;
+            throw error;
+          }
+
+          console.log(
+            `✅ Attempt ${attempt + 1}: Car available, creating booking...`
+          );
+
+          // ============================================
+          // 2. إنشاء الحجز
+          // ============================================
+          const { data, error: rpcError } = await supabase.rpc(
+            "create_booking_atomic",
+            {
+              p_customer_id: user.id,
+              p_car_id: bookingData.carId,
+              p_branch_id: bookingData.branchId,
+              p_rental_type: bookingData.rentalType,
+              p_start: bookingData.startDate,
+              p_end: bookingData.endDate,
+              p_daily_rate: bookingData.dailyRate,
+              p_discount_amount: bookingData.discountAmount || 0,
+              p_initial_status: "pending",
+              p_notes: bookingData.notes,
+            }
+          );
+
+          if (rpcError) {
+            // تحليل نوع الخطأ
+            if (
+              rpcError.message?.includes("not available") ||
+              rpcError.message?.includes("No availability")
+            ) {
+              // قد يكون race condition - المحاولة التالية
+              throw new Error("تم حجز السيارة للتو من مستخدم آخر");
+            }
+
+            if (rpcError.message?.includes("branch mismatch")) {
+              const error = new Error("خطأ في معلومات الفرع");
+              (error as any).noRetry = true;
+              throw error;
+            }
+
+            throw rpcError;
+          }
+
+          // ✅ نجح الحجز
+          console.log(
+            `✅ Booking created successfully on attempt ${attempt + 1}`
+          );
+          callbacks?.onSuccess?.(data as Booking);
+          return data as Booking;
+        } catch (err) {
+          lastError = err as Error;
+
+          // إذا كان خطأ لا يجب retry
+          if ((lastError as any).noRetry) {
+            console.error(`❌ Non-retryable error:`, lastError.message);
+            break;
+          }
+
+          // إذا وصلنا لآخر محاولة
+          if (attempt === MAX_RETRIES) {
+            console.error(`❌ All ${MAX_RETRIES + 1} attempts failed`);
+            break;
+          }
+
+          // استمر للمحاولة التالية
+          console.warn(`⚠️ Attempt ${attempt + 1} failed:`, lastError.message);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+
+      // فشلت جميع المحاولات
+      const finalError = lastError || new Error("فشل إنشاء الحجز");
+
+      setError(finalError);
+      callbacks?.onError?.(finalError);
+      throw finalError;
+    },
+    []
+  );
+
+  return {
+    createBooking,
+    isLoading,
+    error,
+  };
+}
+// ============================================
+// 11. useBookingTimer (محدث - دعم null/undefined)
+// ============================================

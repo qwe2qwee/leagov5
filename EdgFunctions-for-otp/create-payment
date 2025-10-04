@@ -1,0 +1,343 @@
+// supabase/functions/create-payment/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// ==========================================
+// CORS HEADERS
+// ==========================================
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
+};
+// ==========================================
+// ENVIRONMENT VARIABLES
+// ==========================================
+const MOYASAR_SECRET_KEY = Deno.env.get("MOYASAR_SECRET_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+// ==========================================
+// MAIN HANDLER
+// ==========================================
+serve(async (req)=>{
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders
+    });
+  }
+  try {
+    console.log("💳 Payment request received");
+    // ==========================================
+    // 1. AUTHENTICATION
+    // ==========================================
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("Missing authorization header");
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const jwt = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError || !user) {
+      throw new Error("Unauthorized");
+    }
+    console.log("✅ User authenticated:", user.id);
+    // ==========================================
+    // 2. PARSE REQUEST BODY
+    // ==========================================
+    const { bookingId, token, idempotencyKey } = await req.json();
+    // Validate required fields
+    if (!bookingId || !token) {
+      throw new Error("Missing required fields: bookingId or token");
+    }
+    // Validate token format
+    if (!token.startsWith("token_")) {
+      throw new Error("Invalid token format");
+    }
+    console.log("✅ Token received:", token.substring(0, 15) + "...");
+    // ==========================================
+    // 3. FETCH BOOKING DATA
+    // ==========================================
+    const { data: booking, error: bookingError } = await supabase.from("bookings").select(`
+        *,
+        car:cars(
+          id,
+          model:car_models(
+            name_ar,
+            name_en,
+            brand:car_brands(name_ar, name_en)
+          )
+        ),
+        branch:branches(id, name_ar, name_en, manager_id)
+      `).eq("id", bookingId).eq("customer_id", user.id).single();
+    if (bookingError || !booking) {
+      console.error("❌ Booking not found:", bookingError);
+      throw new Error("Booking not found or unauthorized");
+    }
+    console.log("✅ Booking found:", bookingId, "- Status:", booking.status);
+    // ==========================================
+    // 4. VERIFY BOOKING STATUS (محدث)
+    // ==========================================
+    // ❌ لا يمكن الدفع إذا كان في pending (لم تتم الموافقة من الفرع)
+    if (booking.status === "pending") {
+      throw new Error("الحجز في انتظار موافقة الفرع. لا يمكن الدفع حالياً");
+    }
+    // ❌ لا يمكن الدفع إذا كان ملغياً أو منتهياً أو مكتملاً
+    if ([
+      "cancelled",
+      "expired",
+      "completed",
+      "active"
+    ].includes(booking.status)) {
+      throw new Error(`لا يمكن الدفع للحجز بحالة: ${booking.status}`);
+    }
+    // ✅ يمكن الدفع فقط في confirmed أو payment_pending
+    if (booking.status !== "confirmed" && booking.status !== "payment_pending") {
+      throw new Error(`حالة الحجز غير صالحة للدفع: ${booking.status}`);
+    }
+    console.log("✅ Booking status is valid for payment");
+    // ==========================================
+    // 5. UPDATE BOOKING STATUS (محدث)
+    // ==========================================
+    // فقط حدث إلى payment_pending إذا كان في confirmed
+    if (booking.status === "confirmed") {
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 30);
+      const { error: updateError } = await supabase.from("bookings").update({
+        status: "payment_pending",
+        expires_at: expiresAt.toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq("id", bookingId);
+      if (updateError) {
+        console.error("❌ Failed to update booking:", updateError);
+        throw new Error("Failed to update booking status");
+      }
+      console.log("✅ Booking status updated to payment_pending (30 minutes)");
+    } else {
+      console.log("ℹ️ Booking already in payment_pending, continuing...");
+    }
+    // ==========================================
+    // 6. PREPARE PAYMENT DATA
+    // ==========================================
+    const paymentIdempotencyKey = idempotencyKey || crypto.randomUUID();
+    const amountInHalalas = Math.round(booking.final_amount * 100);
+    const carName = `${booking.car?.model?.brand?.name_ar || ""} ${booking.car?.model?.name_ar || ""}`.trim();
+    const moyasarPayload = {
+      given_id: paymentIdempotencyKey,
+      amount: amountInHalalas,
+      currency: "SAR",
+      description: `حجز سيارة - ${carName}`,
+      source: {
+        type: "token",
+        token: token
+      },
+      metadata: {
+        booking_id: bookingId,
+        customer_id: user.id,
+        car_id: booking.car_id,
+        branch_id: booking.branch_id,
+        car_name: carName
+      }
+    };
+    console.log("🔄 Sending payment to Moyasar:", {
+      amount: amountInHalalas / 100,
+      currency: "SAR",
+      bookingId
+    });
+    // ==========================================
+    // 7. CREATE PAYMENT IN MOYASAR
+    // ==========================================
+    const auth = btoa(`${MOYASAR_SECRET_KEY}:`);
+    const moyasarResponse = await fetch("https://api.moyasar.com/v1/payments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${auth}`
+      },
+      body: JSON.stringify(moyasarPayload)
+    });
+    const moyasarResult = await moyasarResponse.json();
+    console.log("📥 Moyasar response status:", moyasarResult.status);
+    // ==========================================
+    // 8. HANDLE MOYASAR RESPONSE (محدث)
+    // ==========================================
+    if (moyasarResponse.ok) {
+      // ✅ CASE 1: Payment succeeded immediately
+      if (moyasarResult.status === "paid") {
+        console.log("✅ Payment completed immediately");
+        await completeBookingPayment(supabase, bookingId, moyasarResult.id, booking, user.id);
+        return new Response(JSON.stringify({
+          success: true,
+          status: "paid",
+          paymentId: moyasarResult.id,
+          message: "Payment completed successfully"
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          },
+          status: 200
+        });
+      }
+      // 🔐 CASE 2: 3DS required
+      if (moyasarResult.status === "initiated") {
+        console.log("🔐 3DS required - returning transaction URL");
+        return new Response(JSON.stringify({
+          success: true,
+          status: "initiated",
+          paymentId: moyasarResult.id,
+          transactionUrl: moyasarResult.source?.transaction_url,
+          message: "3DS verification required"
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          },
+          status: 200
+        });
+      }
+      // ❌ CASE 3: Payment failed (محدث)
+      if (moyasarResult.status === "failed") {
+        console.error("❌ Payment failed:", moyasarResult.source?.message);
+        // إعادة الحجز إلى confirmed مع إعطاء 24 ساعة جديدة
+        const newExpiresAt = new Date();
+        newExpiresAt.setHours(newExpiresAt.getHours() + 24);
+        await supabase.from("bookings").update({
+          status: "confirmed",
+          expires_at: newExpiresAt.toISOString(),
+          updated_at: new Date().toISOString()
+        }).eq("id", bookingId);
+        console.log("✅ Booking reverted to confirmed with new 24h deadline");
+        // إرسال إشعار للعميل (جديد)
+        try {
+          await supabase.rpc("send_notification", {
+            _to_user: user.id,
+            _title_ar: "❌ فشل الدفع",
+            _title_en: "❌ Payment Failed",
+            _message_ar: `فشل الدفع: ${moyasarResult.source?.message || "خطأ غير معروف"}. يمكنك إعادة المحاولة خلال 24 ساعة`,
+            _message_en: `Payment failed: ${moyasarResult.source?.message || "Unknown error"}. You can retry within 24 hours`,
+            _type: "warning",
+            _metadata: {
+              booking_id: bookingId,
+              error: moyasarResult.source?.message
+            },
+            _sent_via: "system"
+          });
+          console.log("✅ Failure notification sent to customer");
+        } catch (notifError) {
+          console.warn("⚠️ Failed to send notification:", notifError);
+        }
+        return new Response(JSON.stringify({
+          success: false,
+          status: "failed",
+          message: moyasarResult.source?.message || "Payment failed"
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          },
+          status: 200
+        });
+      }
+      // ⚠️ CASE 4: Unknown status
+      console.warn("⚠️ Unknown payment status:", moyasarResult.status);
+      throw new Error(`Unknown payment status: ${moyasarResult.status}`);
+    }
+    // ❌ Moyasar API error
+    console.error("❌ Moyasar API error:", moyasarResult);
+    throw new Error(moyasarResult.message || "Payment processing failed");
+  } catch (error) {
+    console.error("❌ Error in create-payment:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message || "Internal server error"
+    }), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      },
+      status: 400
+    });
+  }
+});
+// ==========================================
+// COMPLETE BOOKING PAYMENT
+// ==========================================
+async function completeBookingPayment(supabase, bookingId, paymentReference, booking, userId) {
+  try {
+    console.log("🎉 Completing booking payment:", bookingId);
+    // 1. Update booking to active
+    const { error: updateError } = await supabase.from("bookings").update({
+      status: "active",
+      payment_reference: paymentReference,
+      expires_at: null,
+      updated_at: new Date().toISOString()
+    }).eq("id", bookingId);
+    if (updateError) {
+      console.error("❌ Failed to update booking:", updateError);
+      throw updateError;
+    }
+    console.log("✅ Booking status updated to active");
+    // 2. Send customer notification
+    try {
+      await supabase.rpc("send_notification", {
+        _to_user: userId,
+        _title_ar: "✅ تم تأكيد الحجز",
+        _title_en: "✅ Booking Confirmed",
+        _message_ar: `تم الدفع بنجاح. حجزك الآن نشط. رقم المرجع: ${paymentReference}`,
+        _message_en: `Payment successful. Your booking is now active. Reference: ${paymentReference}`,
+        _type: "booking_update",
+        _metadata: {
+          booking_id: bookingId,
+          payment_reference: paymentReference
+        },
+        _sent_via: "system"
+      });
+      console.log("✅ Customer notification sent");
+    } catch (notifError) {
+      console.warn("⚠️ Failed to send customer notification:", notifError);
+    }
+    // 3. Send branch manager notification
+    if (booking.branch?.manager_id) {
+      try {
+        await supabase.rpc("send_notification", {
+          _to_user: booking.branch.manager_id,
+          _title_ar: "🎉 حجز جديد نشط",
+          _title_en: "🎉 New Active Booking",
+          _message_ar: `تم تأكيد دفع حجز جديد. رقم المرجع: ${paymentReference}`,
+          _message_en: `New booking payment confirmed. Reference: ${paymentReference}`,
+          _type: "booking_update",
+          _metadata: {
+            booking_id: bookingId,
+            payment_reference: paymentReference,
+            customer_id: userId
+          },
+          _sent_via: "system"
+        });
+        console.log("✅ Manager notification sent");
+      } catch (notifError) {
+        console.warn("⚠️ Failed to send manager notification:", notifError);
+      }
+    }
+    // 4. Log security event
+    try {
+      await supabase.rpc("log_security_event", {
+        _event_type: "payment_completed",
+        _user_id: userId,
+        _identifier: bookingId,
+        _details: {
+          booking_id: bookingId,
+          payment_reference: paymentReference,
+          amount: booking.final_amount,
+          timestamp: new Date().toISOString()
+        }
+      });
+      console.log("✅ Security event logged");
+    } catch (logError) {
+      console.warn("⚠️ Failed to log security event:", logError);
+    }
+    console.log("✅ Payment completion process finished successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error in completeBookingPayment:", error);
+    throw error;
+  }
+}

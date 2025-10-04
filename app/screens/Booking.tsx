@@ -10,8 +10,6 @@ import {
   View,
 } from "react-native";
 
-// Import custom components
-
 import BookingButton from "@/components/booking/BookingButton";
 import BookingCalendarModal from "@/components/booking/BookingCalendarModal";
 import BookingCarInfo from "@/components/booking/BookingCarInfo";
@@ -114,7 +112,15 @@ const BookingScreen: React.FC = () => {
     null
   );
 
-  // Calendar state - initially hidden
+  // حالة جديدة - التحقق من التوفر
+  const [checkingAvailability, setCheckingAvailability] =
+    useState<boolean>(false);
+  const [availabilityStatus, setAvailabilityStatus] = useState<{
+    isAvailable: boolean | null;
+    message: string | null;
+  }>({ isAvailable: null, message: null });
+
+  // Calendar state
   const [showCalendar, setShowCalendar] = useState<boolean>(false);
 
   // Form state
@@ -125,7 +131,7 @@ const BookingScreen: React.FC = () => {
     duration: 1,
   });
 
-  // Localized texts
+  // Localized texts - محسّنة
   const t = useMemo(
     () => ({
       title: currentLanguage === "ar" ? "حجز السيارة" : "Car Booking",
@@ -153,16 +159,25 @@ const BookingScreen: React.FC = () => {
         currentLanguage === "ar"
           ? "جاري إنشاء الحجز..."
           : "Creating Booking...",
+      checkingAvailability:
+        currentLanguage === "ar"
+          ? "جاري التحقق من التوفر..."
+          : "Checking Availability...",
       loginRequired:
         currentLanguage === "ar" ? "تسجيل الدخول مطلوب" : "Login Required",
       verificationRequired:
         currentLanguage === "ar"
           ? "التحقق من الهوية مطلوب"
           : "Identity Verification Required",
+      // رسائل محسّنة
       bookingSuccess:
         currentLanguage === "ar"
-          ? "تم إنشاء الحجز بنجاح!"
-          : "Booking Created Successfully!",
+          ? "تم استلام طلب الحجز"
+          : "Booking Request Received",
+      bookingPending:
+        currentLanguage === "ar"
+          ? "سيقوم الفرع بمراجعة طلبك وإشعارك بالقرار خلال 24 ساعة.\n\nيمكنك متابعة حالة الحجز من 'حجوزاتي'."
+          : "The branch will review your request and notify you within 24 hours.\n\nYou can track your booking status in 'My Bookings'.",
       carNotFound:
         currentLanguage === "ar" ? "السيارة غير موجودة" : "Car Not Found",
       loading:
@@ -195,6 +210,21 @@ const BookingScreen: React.FC = () => {
         currentLanguage === "ar"
           ? "اختر عدد الأشهر"
           : "Select number of months",
+      // رسائل جديدة للتوفر
+      available: currentLanguage === "ar" ? "متاحة" : "Available",
+      notAvailable: currentLanguage === "ar" ? "غير متاحة" : "Not Available",
+      carAvailable:
+        currentLanguage === "ar"
+          ? "السيارة متاحة للفترة المحددة"
+          : "Car is available for selected period",
+      carNotAvailable:
+        currentLanguage === "ar"
+          ? "السيارة غير متاحة للفترة المحددة"
+          : "Car is not available for selected period",
+      tryDifferentDates:
+        currentLanguage === "ar"
+          ? "يرجى اختيار تواريخ أخرى"
+          : "Please select different dates",
     }),
     [currentLanguage]
   );
@@ -240,6 +270,96 @@ const BookingScreen: React.FC = () => {
       }));
     }
   }, [formData.startDate, formData.rentalType, formData.duration]);
+
+  // التحقق من التوفر عند تغيير التواريخ - جديد
+  useEffect(() => {
+    const checkAvailability = async () => {
+      if (!car || !formData.startDate || !formData.endDate) {
+        setAvailabilityStatus({ isAvailable: null, message: null });
+        return;
+      }
+
+      // تحقق من صحة التواريخ أولاً
+      const start = new Date(formData.startDate);
+      const end = new Date(formData.endDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (start < today) {
+        setAvailabilityStatus({
+          isAvailable: false,
+          message:
+            currentLanguage === "ar"
+              ? "لا يمكن الحجز في الماضي"
+              : "Cannot book in the past",
+        });
+        return;
+      }
+
+      if (start >= end) {
+        setAvailabilityStatus({
+          isAvailable: false,
+          message:
+            currentLanguage === "ar"
+              ? "تاريخ النهاية يجب أن يكون بعد تاريخ البداية"
+              : "End date must be after start date",
+        });
+        return;
+      }
+
+      setCheckingAvailability(true);
+      try {
+        const { data: isAvailable, error } = await supabase.rpc(
+          "check_car_availability",
+          {
+            _car_id: car.car_id,
+            _start_date: formData.startDate,
+            _end_date: formData.endDate,
+          }
+        );
+
+        if (error) {
+          console.warn("Availability check error:", error);
+          setAvailabilityStatus({
+            isAvailable: null,
+            message: null,
+          });
+          return;
+        }
+
+        if (isAvailable === true) {
+          setAvailabilityStatus({
+            isAvailable: true,
+            message: t.carAvailable,
+          });
+        } else {
+          setAvailabilityStatus({
+            isAvailable: false,
+            message: t.carNotAvailable,
+          });
+        }
+      } catch (error) {
+        console.error("Error checking availability:", error);
+        setAvailabilityStatus({ isAvailable: null, message: null });
+      } finally {
+        setCheckingAvailability(false);
+      }
+    };
+
+    // تأخير بسيط لتجنب كثرة الطلبات
+    const timer = setTimeout(() => {
+      checkAvailability();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [
+    car,
+    formData.startDate,
+    formData.endDate,
+    currentLanguage,
+    t.carAvailable,
+    t.carNotAvailable,
+  ]);
 
   // Fetch car data from Supabase
   useEffect(() => {
@@ -309,7 +429,6 @@ const BookingScreen: React.FC = () => {
 
         const dd = carData as any;
 
-        // Transform the data structure
         const transformedCar: CarData = {
           car_id: dd.id,
           brand_name_ar: dd.car_models.car_brands.name_ar,
@@ -370,7 +489,6 @@ const BookingScreen: React.FC = () => {
           return;
         }
 
-        // Get user profile
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("full_name, phone, email")
@@ -383,7 +501,6 @@ const BookingScreen: React.FC = () => {
           setUserProfile(profile as UserProfile);
         }
 
-        // Check documents status
         const { data: documents, error: docsError } = await supabase
           .from("documents")
           .select("status")
@@ -419,7 +536,6 @@ const BookingScreen: React.FC = () => {
     checkUserStatus();
   }, []);
 
-  // Calculate actual days between dates
   const actualDays = useMemo(() => {
     if (formData.startDate && formData.endDate) {
       const start = new Date(formData.startDate);
@@ -430,7 +546,6 @@ const BookingScreen: React.FC = () => {
     return 1;
   }, [formData.startDate, formData.endDate]);
 
-  // Filter available rental types based on car data
   const availableRentalTypes = useMemo(() => {
     if (!car?.rental_types) return [];
     return rentalTypeOptions.filter((option) =>
@@ -438,14 +553,12 @@ const BookingScreen: React.FC = () => {
     );
   }, [car?.rental_types, rentalTypeOptions]);
 
-  // Get tomorrow's date as minimum
   const minDate = useMemo(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     return tomorrow;
   }, []);
 
-  // تعديل حساب السعر
   const calculatePricing = useCallback(async () => {
     if (car && formData.rentalType && formData.duration > 0) {
       try {
@@ -481,44 +594,36 @@ const BookingScreen: React.FC = () => {
     }
   }, [car, formData.rentalType, formData.duration]);
 
-  // Calculate pricing when dependencies change
   useEffect(() => {
     calculatePricing();
   }, [calculatePricing]);
 
-  // Handle date selection from calendar
   const handleDateSelect = useCallback((date: CalendarDate) => {
     setFormData((prev) => ({
       ...prev,
       startDate: date.dateString,
     }));
-    // Close calendar after selection
     setShowCalendar(false);
   }, []);
 
-  // Handle opening the calendar
   const handleOpenCalendar = useCallback(() => {
     setShowCalendar(true);
   }, []);
 
-  // Handle closing the calendar
   const handleCloseCalendar = useCallback(() => {
     setShowCalendar(false);
   }, []);
 
-  // Handle form data changes
   const handleFormDataChange = useCallback((data: Partial<BookingFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }));
   }, []);
 
-  // Handle form submission
-  // Handle form submission
+  // Handle form submission - محسّن مع تحقق من التوفر
   const handleSubmit = useCallback(async () => {
     if (!car || !bestOffer) return;
 
     setLoading(true);
     try {
-      // Check if user is authenticated
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -533,7 +638,6 @@ const BookingScreen: React.FC = () => {
         return;
       }
 
-      // Check user documents status before proceeding
       if (!userDocuments?.approved) {
         Alert.alert(
           t.verificationRequired,
@@ -548,7 +652,6 @@ const BookingScreen: React.FC = () => {
         return;
       }
 
-      // Create booking using the atomic function
       const { data: booking, error } = await supabase.rpc(
         "create_booking_atomic",
         {
@@ -560,53 +663,125 @@ const BookingScreen: React.FC = () => {
           p_end: formData.endDate,
           p_daily_rate: car.daily_price || 0,
           p_discount_amount: bestOffer.savings_amount || 0,
-          p_initial_status: "pending", // ⬅️ التغيير الوحيد: من payment_pending إلى pending
+          p_initial_status: "pending",
           p_notes: null,
         }
       );
 
       if (error) {
-        // Handle specific error cases
-        if (error.message.includes("Car not available")) {
+        console.error("Booking error:", error);
+
+        // معالجة أخطاء محددة
+        const errorMsg = error.message || "";
+
+        // خطأ: السيارة غير متاحة (نفدت الكمية أو حُجزت)
+        if (
+          errorMsg.includes("Car is not available") ||
+          errorMsg.includes("Car not available") ||
+          errorMsg.includes("available_quantity")
+        ) {
           Alert.alert(
             currentLanguage === "ar"
               ? "السيارة غير متاحة"
               : "Car Not Available",
             currentLanguage === "ar"
-              ? "عذراً، هذه السيارة غير متاحة للفترة المحددة"
-              : "Sorry, this car is not available for the selected period"
+              ? "عذراً، تم حجز هذه السيارة للتو من عميل آخر.\n\nيرجى:\n• اختيار تواريخ أخرى\n• أو اختيار سيارة بديلة"
+              : "Sorry, this car was just booked by another customer.\n\nPlease:\n• Choose different dates\n• Or select an alternative car",
+            [
+              {
+                text:
+                  currentLanguage === "ar"
+                    ? "اختيار سيارة أخرى"
+                    : "Choose Another Car",
+                onPress: () => back(),
+              },
+              {
+                text: currentLanguage === "ar" ? "إعادة المحاولة" : "Try Again",
+                style: "cancel",
+              },
+            ]
           );
-        } else if (error.message.includes("No availability")) {
+          return;
+        }
+
+        // خطأ: لا توجد سيارات كافية
+        if (
+          errorMsg.includes("No availability") ||
+          errorMsg.includes("Not enough cars")
+        ) {
           Alert.alert(
             currentLanguage === "ar"
-              ? "لا توجد مقاعد متاحة"
-              : "No Seats Available",
+              ? "لا توجد سيارات متاحة"
+              : "No Cars Available",
             currentLanguage === "ar"
-              ? "عذراً، لا توجد مقاعد متاحة لهذه السيارة في الفترة المحددة"
-              : "Sorry, no seats are available for this car in the selected period"
+              ? "عذراً، جميع سيارات هذا الموديل محجوزة للفترة المحددة.\n\nيرجى اختيار:\n• تواريخ أخرى\n• أو موديل آخر"
+              : "Sorry, all cars of this model are booked for the selected period.\n\nPlease choose:\n• Different dates\n• Or another model",
+            [
+              {
+                text:
+                  currentLanguage === "ar"
+                    ? "اختيار موديل آخر"
+                    : "Choose Another Model",
+                onPress: () => back(),
+              },
+              {
+                text:
+                  currentLanguage === "ar" ? "تواريخ أخرى" : "Different Dates",
+                style: "cancel",
+              },
+            ]
           );
-        } else if (error.message.includes("Unauthenticated")) {
+          return;
+        }
+
+        // خطأ: مشكلة في المصادقة
+        if (errorMsg.includes("Unauthenticated")) {
           Alert.alert(
             currentLanguage === "ar"
               ? "خطأ في المصادقة"
               : "Authentication Error",
             currentLanguage === "ar"
-              ? "يرجى تسجيل الدخول مرة أخرى"
-              : "Please login again"
+              ? "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى"
+              : "Your session has expired. Please login again"
           );
-        } else {
-          throw error;
+          return;
         }
-        return;
+
+        // خطأ: نوع الإيجار غير مدعوم
+        if (
+          errorMsg.includes("Rental type") &&
+          errorMsg.includes("not allowed")
+        ) {
+          Alert.alert(
+            currentLanguage === "ar"
+              ? "نوع الإيجار غير متاح"
+              : "Rental Type Not Available",
+            currentLanguage === "ar"
+              ? "نوع الإيجار المحدد غير متاح لهذه السيارة"
+              : "The selected rental type is not available for this car"
+          );
+          return;
+        }
+
+        // خطأ: عدم تطابق الفرع
+        if (
+          errorMsg.includes("Car branch mismatch") ||
+          errorMsg.includes("branch")
+        ) {
+          Alert.alert(
+            currentLanguage === "ar" ? "خطأ في البيانات" : "Data Error",
+            currentLanguage === "ar"
+              ? "حدث خطأ في بيانات السيارة. يرجى المحاولة مرة أخرى"
+              : "An error occurred with car data. Please try again"
+          );
+          return;
+        }
+
+        // خطأ عام
+        throw error;
       }
 
-      Alert.alert(
-        t.bookingSuccess,
-        currentLanguage === "ar"
-          ? "تم إرسال طلب الحجز بنجاح! في انتظار موافقة الفرع"
-          : "Booking request sent successfully! Waiting for branch approval"
-      );
-
+      Alert.alert(t.bookingSuccess, t.bookingPending);
       replace("/Bills");
     } catch (error: any) {
       console.error("Booking error:", error);
@@ -629,12 +804,13 @@ const BookingScreen: React.FC = () => {
     formData,
     currentLanguage,
     back,
+    replace,
     t.loginRequired,
     t.verificationRequired,
     t.bookingSuccess,
+    t.bookingPending,
   ]);
 
-  // Create styles
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -674,9 +850,46 @@ const BookingScreen: React.FC = () => {
     cardContainer: {
       marginBottom: responsive.safeAreaBottom + 20,
     },
+    // Styles جديدة لحالة التوفر
+    availabilityContainer: {
+      marginTop: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      borderRadius: 12,
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    availabilityAvailable: {
+      backgroundColor: colors.success + "15",
+      borderWidth: 1,
+      borderColor: colors.success + "40",
+    },
+    availabilityNotAvailable: {
+      backgroundColor: colors.error + "15",
+      borderWidth: 1,
+      borderColor: colors.error + "40",
+    },
+    availabilityChecking: {
+      backgroundColor: colors.primary + "10",
+      borderWidth: 1,
+      borderColor: colors.primary + "30",
+    },
+    availabilityText: {
+      flex: 1,
+      fontSize: responsive.getFontSize(14, 13, 16),
+      fontFamily: fonts.Medium || fonts.Regular,
+    },
+    availabilityTextAvailable: {
+      color: colors.success,
+    },
+    availabilityTextNotAvailable: {
+      color: colors.error,
+    },
+    availabilityTextChecking: {
+      color: colors.primary,
+    },
   });
 
-  // Loading state
   if (fetchingCar) {
     return (
       <View style={styles.loadingContainer}>
@@ -689,7 +902,6 @@ const BookingScreen: React.FC = () => {
     );
   }
 
-  // Car not found state
   if (!car) {
     return (
       <View style={styles.loadingContainer}>
@@ -722,10 +934,8 @@ const BookingScreen: React.FC = () => {
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <ScreenHeader title={t.title} onBack={() => back()} />
 
-        {/* Car Details Card */}
         <BookingCarInfo
           car={car}
           cardTitle={t.carDetails}
@@ -734,13 +944,11 @@ const BookingScreen: React.FC = () => {
           riyalLabel={t.riyal}
         />
 
-        {/* Booking Form Card */}
         <Card style={styles.cardContainer}>
           <Card.Header>
             <Card.Title size="md">{t.bookingData}</Card.Title>
           </Card.Header>
           <Card.Content>
-            {/* Booking Form */}
             <BookingForm
               formData={formData}
               onFormDataChange={handleFormDataChange}
@@ -764,7 +972,68 @@ const BookingScreen: React.FC = () => {
               }}
             />
 
-            {/* Booking Summary */}
+            {/* عرض حالة التوفر - جديد */}
+            {formData.startDate && formData.endDate && (
+              <View
+                style={[
+                  styles.availabilityContainer,
+                  checkingAvailability
+                    ? styles.availabilityChecking
+                    : availabilityStatus.isAvailable === true
+                    ? styles.availabilityAvailable
+                    : availabilityStatus.isAvailable === false
+                    ? styles.availabilityNotAvailable
+                    : styles.availabilityChecking,
+                ]}
+              >
+                {checkingAvailability ? (
+                  <>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.availabilityText,
+                        styles.availabilityTextChecking,
+                      ]}
+                    >
+                      {t.checkingAvailability}
+                    </Text>
+                  </>
+                ) : availabilityStatus.isAvailable === true ? (
+                  <>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={24}
+                      color={colors.success}
+                    />
+                    <Text
+                      style={[
+                        styles.availabilityText,
+                        styles.availabilityTextAvailable,
+                      ]}
+                    >
+                      {availabilityStatus.message}
+                    </Text>
+                  </>
+                ) : availabilityStatus.isAvailable === false ? (
+                  <>
+                    <Ionicons
+                      name="close-circle"
+                      size={24}
+                      color={colors.error}
+                    />
+                    <Text
+                      style={[
+                        styles.availabilityText,
+                        styles.availabilityTextNotAvailable,
+                      ]}
+                    >
+                      {availabilityStatus.message}
+                    </Text>
+                  </>
+                ) : null}
+              </View>
+            )}
+
             {bestOffer && (
               <BookingSummary
                 dailyPrice={car.daily_price}
@@ -782,15 +1051,20 @@ const BookingScreen: React.FC = () => {
               />
             )}
 
-            {/* Booking Button */}
             <BookingButton
               loading={loading}
-              disabled={loading || !bestOffer || !formData.startDate}
+              disabled={
+                loading ||
+                !bestOffer ||
+                !formData.startDate ||
+                availabilityStatus.isAvailable === false ||
+                checkingAvailability
+              }
               onSubmit={handleSubmit}
               userProfile={userProfile}
               totalPrice={bestOffer?.discounted_price || 0}
               texts={{
-                processing: t.processing,
+                processing: loading ? t.processing : t.confirmBooking,
                 confirmBooking: t.confirmBooking,
                 riyal: t.riyal,
                 customerInfo: t.customerInfo,
@@ -803,7 +1077,6 @@ const BookingScreen: React.FC = () => {
         </Card>
       </ScrollView>
 
-      {/* Calendar Modal */}
       <BookingCalendarModal
         visible={showCalendar}
         onClose={handleCloseCalendar}

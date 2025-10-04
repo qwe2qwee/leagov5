@@ -136,9 +136,43 @@ export const useCars = () => {
         const from = (page - 1) * limit;
         const to = from + limit - 1;
 
+        // ✅ تغيير: استخدام cars مع joins بدلاً من cars_with_images
         const { data, error, count } = await supabase
-          .from("cars_with_images")
-          .select("*", { count: "exact" })
+          .from("cars")
+          .select(
+            `
+            *,
+            model:car_models!inner (
+              *,
+              brand:car_brands!inner (
+                id,
+                name_ar,
+                name_en,
+                logo_url,
+                is_active
+              )
+            ),
+            color:car_colors!inner (
+              id,
+              name_ar,
+              name_en,
+              hex_code,
+              is_active
+            ),
+            branch:branches!inner (
+              id,
+              name_ar,
+              name_en,
+              location_ar,
+              location_en,
+              latitude,
+              longitude,
+              phone,
+              is_active
+            )
+          `,
+            { count: "exact" }
+          )
           .eq("status", "available")
           .gt("available_quantity", 0)
           .order("created_at", { ascending: false })
@@ -146,32 +180,50 @@ export const useCars = () => {
 
         if (error) throw error;
 
-        const newCars = data || [];
+        // تحويل البيانات لنفس الشكل القديم
+        const formattedCars = (data || []).map((car) => ({
+          ...car,
+          brand_name_ar: car.model?.brand?.name_ar,
+          brand_name_en: car.model?.brand?.name_en,
+          brand_logo_url: car.model?.brand?.logo_url,
+          model_name_ar: car.model?.name_ar,
+          model_name_en: car.model?.name_en,
+          model_year: car.model?.year,
+          main_image_url: car.model?.default_image_url,
+          model_description_ar: car.model?.description_ar,
+          model_description_en: car.model?.description_en,
+          specifications: car.model?.specifications,
+          color_name_ar: car.color?.name_ar,
+          color_name_en: car.color?.name_en,
+          hex_code: car.color?.hex_code,
+          branch_name_ar: car.branch?.name_ar,
+          branch_name_en: car.branch?.name_en,
+          branch_location_ar: car.branch?.location_ar,
+          branch_location_en: car.branch?.location_en,
+        })) as CarWithImages[];
 
         if (append) {
           setCars((prevCars) => {
-            // Prevent duplicates
             const existingIds = new Set(prevCars.map((car) => car.id));
-            const uniqueNewCars = newCars.filter(
+            const uniqueNewCars = formattedCars.filter(
               (car) => !existingIds.has(car.id)
             );
             return [...prevCars, ...uniqueNewCars];
           });
         } else {
-          setCars(newCars);
+          setCars(formattedCars);
           setCurrentPage(1);
           setHasReachedEnd(false);
         }
 
-        // Check if we've reached the end
         if (
-          newCars.length < limit ||
-          (count && from + newCars.length >= count)
+          formattedCars.length < limit ||
+          (count && from + formattedCars.length >= count)
         ) {
           setHasReachedEnd(true);
         }
 
-        return newCars;
+        return formattedCars;
       } catch (err: unknown) {
         const error = err as Error;
         setError(error.message);
@@ -183,7 +235,6 @@ export const useCars = () => {
     },
     []
   );
-
   // Load more cars function
   const loadMoreCars = useCallback(async (): Promise<void> => {
     if (loadingMore || hasReachedEnd) return;
@@ -407,16 +458,55 @@ export const useCars = () => {
     async (carId: string): Promise<CarWithImages | null> => {
       try {
         setLoading(true);
+
+        // ✅ جلب من cars بدلاً من cars_with_images
         const { data, error } = await supabase
-          .from("cars_with_images")
-          .select("*")
+          .from("cars")
+          .select(
+            `
+            *,
+            model:car_models!inner (
+              *,
+              brand:car_brands!inner (*)
+            ),
+            color:car_colors!inner (*),
+            branch:branches!inner (*)
+          `
+          )
           .eq("id", carId)
           .single();
 
         if (error) throw error;
 
-        setSelectedCar(data);
-        return data;
+        // ✅ تحقق إضافي من الحالة
+        if (data.status !== "available" || data.available_quantity <= 0) {
+          console.warn("Car not available:", {
+            status: data.status,
+            available_quantity: data.available_quantity,
+          });
+          setError("عذراً، هذه السيارة لم تعد متاحة");
+          return null;
+        }
+
+        // تحويل البيانات لنفس الشكل
+        const formattedCar = {
+          ...data,
+          brand_name_ar: data.model?.brand?.name_ar,
+          brand_name_en: data.model?.brand?.name_en,
+          brand_logo_url: data.model?.brand?.logo_url,
+          model_name_ar: data.model?.name_ar,
+          model_name_en: data.model?.name_en,
+          model_year: data.model?.year,
+          main_image_url: data.model?.default_image_url,
+          color_name_ar: data.color?.name_ar,
+          color_name_en: data.color?.name_en,
+          hex_code: data.color?.hex_code,
+          branch_name_ar: data.branch?.name_ar,
+          branch_name_en: data.branch?.name_en,
+        } as CarWithImages;
+
+        setSelectedCar(formattedCar);
+        return formattedCar;
       } catch (err: unknown) {
         const error = err as Error;
         setError(error.message);

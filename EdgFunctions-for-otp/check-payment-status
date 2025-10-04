@@ -1,0 +1,438 @@
+// supabase/functions/check-payment-status/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// ==========================================
+// CORS HEADERS
+// ==========================================
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+// ==========================================
+// ENVIRONMENT VARIABLES
+// ==========================================
+const MOYASAR_SECRET_KEY = Deno.env.get("MOYASAR_SECRET_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+// ==========================================
+// MAIN HANDLER
+// ==========================================
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders,
+    });
+  }
+  try {
+    console.log("🔍 Starting payment status check...");
+    // ==========================================
+    // 1. AUTHENTICATION
+    // ==========================================
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("Missing authorization header");
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const jwt = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(jwt);
+    if (authError || !user) {
+      console.error("Authentication failed:", authError);
+      throw new Error("Unauthorized");
+    }
+    console.log("✅ User authenticated:", user.id);
+    // ==========================================
+    // 2. PARSE REQUEST BODY
+    // ==========================================
+    const { paymentId, bookingId } = await req.json();
+    if (!paymentId || !bookingId) {
+      throw new Error("Missing required fields: paymentId and bookingId");
+    }
+    console.log("📋 Checking payment:", {
+      paymentId,
+      bookingId,
+    });
+    // ==========================================
+    // 3. FETCH BOOKING DATA
+    // ==========================================
+    const { data: booking, error: bookingError } = await supabase
+      .from("bookings")
+      .select(
+        `
+        *,
+        car:cars(
+          id,
+          model:car_models(
+            name_ar, 
+            name_en, 
+            brand:car_brands(name_ar, name_en)
+          )
+        ),
+        branch:branches(id, name_ar, name_en, manager_id)
+      `
+      )
+      .eq("id", bookingId)
+      .eq("customer_id", user.id)
+      .single();
+    if (bookingError || !booking) {
+      console.error("Booking not found:", bookingError);
+      throw new Error("Booking not found or unauthorized");
+    }
+    console.log("✅ Booking found:", booking.id, "Status:", booking.status);
+    // ==========================================
+    // 4. FETCH PAYMENT STATUS FROM MOYASAR
+    // ==========================================
+    const auth = btoa(`${"sk_test_G398iwnZxwTkvwvdz1krcjv1VU56r4RSdzB7pYRj"}:`);
+    const moyasarResponse = await fetch(
+      `https://api.moyasar.com/v1/payments/${paymentId}`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+        },
+      }
+    );
+    if (!moyasarResponse.ok) {
+      console.error("Moyasar API error:", moyasarResponse.status);
+      throw new Error("Failed to fetch payment status from Moyasar");
+    }
+    const payment = await moyasarResponse.json();
+    console.log("💳 Moyasar payment status:", payment.status);
+    // ==========================================
+    // 5. HANDLE PAYMENT STATUS (محدث)
+    // ==========================================
+    // ✅ CASE 1: Payment successful
+    if (payment.status === "paid") {
+      console.log("✅ Payment is paid");
+      // إذا لم يتم تحديث الحجز بعد، حدثه
+      if (booking.status !== "active") {
+        console.log("🔄 Completing booking payment...");
+        await completeBookingPayment(
+          supabase,
+          bookingId,
+          paymentId,
+          booking,
+          user.id
+        );
+        console.log("✅ Booking payment completed successfully");
+      } else {
+        console.log("ℹ️ Booking already active");
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: "paid",
+          paymentId: paymentId,
+          bookingStatus: "active",
+          message: "Payment completed successfully",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }
+      );
+    }
+    // ❌ CASE 2: Payment failed (محدث)
+    if (payment.status === "failed") {
+      console.log("❌ Payment failed");
+      // إعادة الحجز إلى confirmed مع 24 ساعة جديدة
+      if (booking.status === "payment_pending") {
+        const newExpiresAt = new Date();
+        newExpiresAt.setHours(newExpiresAt.getHours() + 24);
+        const { error: revertError } = await supabase
+          .from("bookings")
+          .update({
+            status: "confirmed",
+            expires_at: newExpiresAt.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", bookingId);
+        if (revertError) {
+          console.error("Failed to revert booking status:", revertError);
+        } else {
+          console.log("✅ Booking reverted to confirmed with new 24h deadline");
+        }
+        // إرسال إشعار للعميل (جديد)
+        try {
+          await supabase.rpc("send_notification", {
+            _to_user: user.id,
+            _title_ar: "❌ فشل التحقق من الدفع",
+            _title_en: "❌ Payment Verification Failed",
+            _message_ar: `فشل التحقق من الدفع: ${
+              payment.source?.message || "خطأ غير معروف"
+            }. يمكنك إعادة المحاولة خلال 24 ساعة`,
+            _message_en: `Payment verification failed: ${
+              payment.source?.message || "Unknown error"
+            }. You can retry within 24 hours`,
+            _type: "warning",
+            _metadata: {
+              booking_id: bookingId,
+              payment_id: paymentId,
+              error: payment.source?.message,
+            },
+            _sent_via: "system",
+          });
+          console.log("✅ Failure notification sent to customer");
+        } catch (notifError) {
+          console.warn("⚠️ Failed to send notification:", notifError);
+        }
+        // تسجيل الحدث الأمني (جديد)
+        try {
+          await supabase.rpc("log_security_event", {
+            _event_type: "payment_failed",
+            _user_id: user.id,
+            _identifier: bookingId,
+            _details: {
+              booking_id: bookingId,
+              payment_id: paymentId,
+              error: payment.source?.message,
+              timestamp: new Date().toISOString(),
+            },
+          });
+          console.log("✅ Security event logged");
+        } catch (logError) {
+          console.warn("⚠️ Failed to log security event:", logError);
+        }
+      }
+      return new Response(
+        JSON.stringify({
+          success: false,
+          status: "failed",
+          message: payment.source?.message || "Payment failed",
+          bookingStatus: "confirmed",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }
+      );
+    }
+    // ⏳ CASE 3: Payment still being processed
+    if (payment.status === "initiated") {
+      console.log("⏳ Payment still being processed");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: "initiated",
+          message: "Payment is still being processed",
+          transactionUrl: payment.source?.transaction_url,
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }
+      );
+    }
+    // 🔄 CASE 4: Payment authorized (waiting for capture) (جديد)
+    if (payment.status === "authorized") {
+      console.log("🔄 Payment authorized, waiting for capture");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: "authorized",
+          message: "Payment authorized, waiting for final confirmation",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }
+      );
+    }
+    // 💰 CASE 5: Payment refunded (جديد)
+    if (payment.status === "refunded") {
+      console.log("💰 Payment was refunded");
+      // إذا كان الحجز نشطاً، ألغيه
+      if (booking.status === "active") {
+        await supabase
+          .from("bookings")
+          .update({
+            status: "cancelled",
+            notes: "تم استرجاع المبلغ",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", bookingId);
+        // إشعار العميل
+        try {
+          await supabase.rpc("send_notification", {
+            _to_user: user.id,
+            _title_ar: "💰 تم استرجاع المبلغ",
+            _title_en: "💰 Payment Refunded",
+            _message_ar: "تم استرجاع مبلغ الحجز. تم إلغاء الحجز تلقائياً",
+            _message_en:
+              "Payment has been refunded. Booking automatically cancelled",
+            _type: "info",
+            _metadata: {
+              booking_id: bookingId,
+              payment_id: paymentId,
+            },
+            _sent_via: "system",
+          });
+        } catch (notifError) {
+          console.warn("⚠️ Failed to send notification:", notifError);
+        }
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          status: "refunded",
+          message: "Payment was refunded",
+          bookingStatus: "cancelled",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 200,
+        }
+      );
+    }
+    // ⚠️ CASE 6: Unknown or other status
+    console.log("ℹ️ Payment status:", payment.status);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        status: payment.status,
+        message: `Payment status: ${payment.status}`,
+        bookingStatus: booking.status,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error("❌ Error in check-payment-status:", error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message || "Internal server error",
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 400,
+      }
+    );
+  }
+});
+// ==========================================
+// COMPLETE BOOKING PAYMENT
+// ==========================================
+async function completeBookingPayment(
+  supabase,
+  bookingId,
+  paymentReference,
+  booking,
+  userId
+) {
+  try {
+    console.log("📝 Step 1: Updating booking status...");
+    // 1. Update booking to active
+    const { error: updateError } = await supabase
+      .from("bookings")
+      .update({
+        status: "active",
+        payment_reference: paymentReference,
+        expires_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", bookingId);
+    if (updateError) {
+      console.error("❌ Error updating booking:", updateError);
+      throw updateError;
+    }
+    console.log("✅ Booking status updated to active");
+    // 2. Send customer notification
+    console.log("📢 Step 2: Sending customer notification...");
+    try {
+      await supabase.rpc("send_notification", {
+        _to_user: userId,
+        _title_ar: "✅ تم تأكيد الحجز",
+        _title_en: "✅ Booking Confirmed",
+        _message_ar: `تم الدفع بنجاح. حجزك الآن نشط. رقم المرجع: ${paymentReference}`,
+        _message_en: `Payment successful. Your booking is now active. Reference: ${paymentReference}`,
+        _type: "booking_update",
+        _metadata: {
+          booking_id: bookingId,
+          payment_reference: paymentReference,
+        },
+        _sent_via: "system",
+      });
+      console.log("✅ Customer notification sent");
+    } catch (notifError) {
+      console.error(
+        "⚠️ Customer notification failed (non-critical):",
+        notifError
+      );
+    }
+    // 3. Send branch manager notification
+    if (booking.branch?.manager_id) {
+      console.log("📢 Step 3: Sending branch manager notification...");
+      try {
+        await supabase.rpc("send_notification", {
+          _to_user: booking.branch.manager_id,
+          _title_ar: "🎉 حجز جديد نشط",
+          _title_en: "🎉 New Active Booking",
+          _message_ar: `تم تأكيد دفع حجز جديد. رقم المرجع: ${paymentReference}`,
+          _message_en: `New booking payment confirmed. Reference: ${paymentReference}`,
+          _type: "booking_update",
+          _metadata: {
+            booking_id: bookingId,
+            payment_reference: paymentReference,
+          },
+          _sent_via: "system",
+        });
+        console.log("✅ Manager notification sent");
+      } catch (notifError) {
+        console.error(
+          "⚠️ Manager notification failed (non-critical):",
+          notifError
+        );
+      }
+    }
+    // 4. Log security event
+    console.log("📝 Step 4: Logging security event...");
+    try {
+      await supabase.rpc("log_security_event", {
+        _event_type: "payment_completed",
+        _user_id: userId,
+        _identifier: bookingId,
+        _details: {
+          booking_id: bookingId,
+          payment_reference: paymentReference,
+          amount: booking.final_amount,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      console.log("✅ Security event logged");
+    } catch (auditError) {
+      console.error("⚠️ Audit log failed (non-critical):", auditError);
+    }
+    console.log("✅ Complete booking payment finished successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Error completing booking payment:", error);
+    throw error;
+  }
+}
