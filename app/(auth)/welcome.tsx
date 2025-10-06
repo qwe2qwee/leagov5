@@ -228,7 +228,7 @@ const Onboarding: React.FC = () => {
                 {/* Skip Button (absolute position) */}
                 {item.skip && (
                   <TouchableOpacity
-                    onPress={() => replace("/(auth)/sign-in", { force: true })}
+                    onPress={() => replace("/(tabs)", { force: true })}
                     disabled={loading}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -296,7 +296,7 @@ const Onboarding: React.FC = () => {
             }
             onPress={() =>
               isLastSlide
-                ? replace("/(auth)/sign-up", { force: true })
+                ? replace("/(tabs)", { force: true })
                 : swiperRef.current?.scrollBy(1)
             }
             loading={loading}

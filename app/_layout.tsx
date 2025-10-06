@@ -1,21 +1,21 @@
-import "react-native-reanimated";
-
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import * as SplashScreenExpo from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import "react-native-reanimated";
 
 import { AuthProvider } from "@/components/Auth/AuthProvider";
 import SplashScreen from "@/components/SplashScreen";
 import { ToastContainer } from "@/components/Toast/ToastContainer";
 import { TabBarHeightProvider } from "@/context/TabBarHeightContext";
 
-// منع إخفاء splash screen تلقائياً
+// منع إخفاء splash screen الافتراضي تلقائياً
 SplashScreenExpo.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [isAppReady, setIsAppReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
+  const splashShownRef = useRef(false); // ✅ لتفادي تكرار السبلش
 
   const [fontsLoaded] = useFonts({
     "Montserrat-Bold": require("../assets/fonts/Montserrat-Bold.ttf"),
@@ -32,17 +32,14 @@ export default function RootLayout() {
     "Zain-Regular": require("../assets/fonts/Zain-Regular.ttf"),
   });
 
+  // تجهيز التطبيق
   useEffect(() => {
     const prepare = async () => {
       try {
-        // انتظار تحميل الخطوط
         if (fontsLoaded) {
-          // يمكنك إضافة المزيد من عمليات التحضير هنا
-          // مثل تحميل البيانات المحفوظة، إعداد الإشعارات، إلخ
+          // انتظار بسيط بعد تحميل الخطوط
           await new Promise((resolve) => setTimeout(resolve, 500));
-
           setIsAppReady(true);
-          // إخفاء splash screen الافتراضي من Expo
           await SplashScreenExpo.hideAsync();
         }
       } catch (e) {
@@ -55,21 +52,26 @@ export default function RootLayout() {
     prepare();
   }, [fontsLoaded]);
 
+  // ✅ عند انتهاء شاشة Splash المخصصة
   const handleSplashFinish = () => {
     setShowCustomSplash(false);
+    splashShownRef.current = true; // سجلنا أن السبلش انعرضت مرة واحدة
+
+    // ⏳ تأخير بسيط لتفادي مشاكل الـ router أثناء mount
+    setTimeout(() => {
+      router.push("/(auth)/welcome");
+    }, 150);
   };
 
-  // إذا الخطوط لم تحمل بعد أو التطبيق غير جاهز، أظهر null
-  if (!fontsLoaded || !isAppReady) {
-    return null;
-  }
+  // ⏳ أثناء تحميل الخطوط أو التهيئة
+  if (!fontsLoaded || !isAppReady) return null;
 
-  // إذا كان custom splash يجب أن يظهر
-  if (showCustomSplash) {
+  // 🎬 عرض شاشة Splash فقط أول مرة
+  if (showCustomSplash && !splashShownRef.current) {
     return <SplashScreen onFinish={handleSplashFinish} />;
   }
 
-  // التطبيق الرئيسي
+  // 🧭 التطبيق الرئيسي
   return (
     <AuthProvider>
       <TabBarHeightProvider>
@@ -109,7 +111,7 @@ export default function RootLayout() {
           <Stack.Screen
             name="screens/TermsAndConditions"
             options={{ headerShown: false }}
-          />{" "}
+          />
           <Stack.Screen
             name="screens/Language"
             options={{ headerShown: false }}
@@ -122,7 +124,7 @@ export default function RootLayout() {
             name="screens/PaymentScreen"
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="screens/Help" options={{ headerShown: false }} />{" "}
+          <Stack.Screen name="screens/Help" options={{ headerShown: false }} />
           <Stack.Screen name="screens/About" options={{ headerShown: false }} />
         </Stack>
         <ToastContainer />
