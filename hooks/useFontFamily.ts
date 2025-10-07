@@ -34,6 +34,7 @@ export function useFontFamily(): Partial<Record<FontWeight, string>> {
       ExtraLight: "Zain-ExtraLight",
       Light: "Zain-Light",
       Regular: "Zain-Regular",
+      SemiBold: "Zain-Bold",
       Bold: "Zain-Bold",
       ExtraBold: "Zain-ExtraBold",
     };

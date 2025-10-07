@@ -71,7 +71,7 @@ const SignInHeader = () => {
       position: "absolute",
       bottom: 28,
       ...(isRTL ? { right: 20 } : { left: 20 }),
-      color: colors.textInverse || "#ffffff",
+      color: "#ffffff",
       textAlign: isRTL ? "right" : "left",
       textShadowColor: "rgba(0, 0, 0, 0.3)",
       textShadowOffset: { width: 1, height: 1 },
