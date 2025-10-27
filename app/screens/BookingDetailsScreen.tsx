@@ -259,10 +259,13 @@ export default function BookingDetailsScreen() {
 
         {/* Financial Information */}
         <FinancialSection
-          dailyRate={booking.daily_rate}
+          rentalType={booking.rental_type} // ✅ جديد
+          dailyRate={booking.daily_rate} // ✅ جديد
+          totalDays={booking.total_days} // ✅ جديد
           totalAmount={booking.total_amount}
           discountAmount={booking.discount_amount}
           finalAmount={booking.final_amount}
+          carDiscountPercentage={booking.car?.discount_percentage} // ✅ جديد
         />
 
         {/* Branch Information */}
