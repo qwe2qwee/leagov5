@@ -44,12 +44,16 @@ export interface Booking {
   updated_at: string;
   car?: any;
   branch?: any;
+  approved_by_user?: any;
+  total_count?: number;
 }
 
 export interface BookingFilters {
   status?: BookingStatus[];
   sortBy?: "created_at" | "start_date";
   sortOrder?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
 }
 
 export interface BookingCreateData {
@@ -71,90 +75,47 @@ export function useUserBookings(filters?: BookingFilters) {
   const [data, setData] = useState<Booking[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [totalCount, setTotalCount] = useState<number>(0);
 
   const fetchBookings = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("غير مسجل الدخول");
+      // ✅ استخدام الدالة بدلاً من query معقد
+      const { data: result, error: rpcError } = await supabase.rpc(
+        "get_user_bookings",
+        {
+          p_user_id: null, // null = المستخدم الحالي
+          p_status: filters?.status || null,
+          p_sort_by: filters?.sortBy || "created_at",
+          p_sort_order: filters?.sortOrder || "desc",
+          p_limit: filters?.limit || 100,
+          p_offset: filters?.offset || 0,
+        }
+      );
 
-      let query = supabase
-        .from("bookings")
-        .select(
-          `
-          *,
-          car:cars (
-            id,
-            daily_price,
-            weekly_price,
-            monthly_price,
-            ownership_price,
-            seats,
-            fuel_type,
-            transmission,
-            features_ar,
-            features_en,
-            branch_images,
-            model:car_models (
-              id,
-              name_ar,
-              name_en,
-              year,
-              default_image_url,
-              description_ar,
-              description_en,
-              brand:car_brands (
-                id,
-                name_ar,
-                name_en,
-                logo_url
-              )
-            ),
-            color:car_colors (
-              id,
-              name_ar,
-              name_en,
-              hex_code
-            )
-          ),
-          branch:branches (
-            id,
-            name_ar,
-            name_en,
-            location_ar,
-            location_en,
-            phone,
-            email,
-            working_hours,
-            latitude,
-            longitude
-          )
-        `
-        )
-        .eq("customer_id", user.id);
+      if (rpcError) throw rpcError;
 
-      if (filters?.status?.length) {
-        query = query.in("status", filters.status);
+      // استخراج total_count من أول سطر
+      const bookings = result as Booking[];
+      if (bookings && bookings.length > 0) {
+        setTotalCount(bookings[0].total_count || 0);
       }
 
-      const sortBy = filters?.sortBy || "created_at";
-      const sortOrder = filters?.sortOrder || "desc";
-      query = query.order(sortBy, { ascending: sortOrder === "asc" });
-
-      const { data: bookings, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-
-      setData(bookings as Booking[]);
+      setData(bookings);
     } catch (err) {
       setError(err as Error);
     } finally {
       setIsLoading(false);
     }
-  }, [filters?.status, filters?.sortBy, filters?.sortOrder]);
+  }, [
+    filters?.status,
+    filters?.sortBy,
+    filters?.sortOrder,
+    filters?.limit,
+    filters?.offset,
+  ]);
 
   useEffect(() => {
     fetchBookings();
@@ -165,6 +126,7 @@ export function useUserBookings(filters?: BookingFilters) {
     isLoading,
     error,
     refetch: fetchBookings,
+    totalCount,
   };
 }
 
@@ -187,51 +149,18 @@ export function useBookingDetails(bookingId: string) {
       setIsLoading(true);
       setError(null);
 
-      const { data: booking, error: fetchError } = await supabase
-        .from("bookings")
-        .select(
-          `
-          *,
-          car:cars (
-            *,
-            model:car_models (
-              *,
-              brand:car_brands (*),
-              specifications
-            ),
-            color:car_colors (*)
-          ),
-          branch:branches (
-            id,
-            name_ar,
-            name_en,
-            location_ar,
-            location_en,
-            phone,
-            email,
-            working_hours,
-            latitude,
-            longitude
-          )
-        `
-        )
-        .eq("id", bookingId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      // جلب معلومات المُوافِق إذا كان موجوداً
-      if (booking?.approved_by) {
-        const { data: approverProfile } = await supabase
-          .from("profiles")
-          .select("full_name, email")
-          .eq("user_id", booking.approved_by)
-          .single();
-
-        if (approverProfile) {
-          (booking as any).approved_by_user = approverProfile;
+      // ✅ استخدام الدالة بدلاً من query معقد
+      const { data: result, error: rpcError } = await supabase.rpc(
+        "get_booking_full_details",
+        {
+          p_booking_id: bookingId,
         }
-      }
+      );
+
+      if (rpcError) throw rpcError;
+
+      // الدالة ترجع array، نأخذ أول عنصر
+      const booking = Array.isArray(result) ? result[0] : result;
 
       setData(booking as Booking);
     } catch (err) {
@@ -252,7 +181,6 @@ export function useBookingDetails(bookingId: string) {
     refetch: fetchBooking,
   };
 }
-
 // ============================================
 // 3. useCreateBooking
 // ============================================
@@ -319,7 +247,17 @@ interface UseCarAvailabilityParams {
   carId: string;
   startDate: string;
   endDate: string;
-  enabled?: boolean; // للتحكم في التنفيذ التلقائي
+  enabled?: boolean;
+}
+
+interface AvailabilityDetails {
+  isAvailable: boolean;
+  totalQuantity: number;
+  availableQuantity: number;
+  actualAvailable: number;
+  conflictingBookings: number;
+  carStatus: string;
+  message: string;
 }
 
 export function useCarAvailability({
@@ -328,70 +266,40 @@ export function useCarAvailability({
   endDate,
   enabled = true,
 }: UseCarAvailabilityParams) {
-  const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [data, setData] = useState<AvailabilityDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [availabilityDetails, setAvailabilityDetails] = useState<{
-    totalQuantity: number;
-    availableQuantity: number;
-    conflictingBookings: number;
-  } | null>(null);
 
   const checkAvailability = useCallback(async () => {
     if (!carId || !startDate || !endDate) {
       setError(new Error("معلومات غير كاملة"));
-      return false;
+      return null;
     }
 
     try {
       setIsLoading(true);
       setError(null);
 
-      // استخدام الدالة check_car_availability
-      const { data: availableData, error: rpcError } = await supabase.rpc(
-        "check_car_availability",
+      // ✅ استخدام الدالة المحسّنة
+      const { data: result, error: rpcError } = await supabase.rpc(
+        "check_car_availability_detailed",
         {
-          _car_id: carId,
-          _start_date: startDate,
-          _end_date: endDate,
+          p_car_id: carId,
+          p_start_date: startDate,
+          p_end_date: endDate,
         }
       );
 
       if (rpcError) throw rpcError;
 
-      // جلب تفاصيل السيارة
-      const { data: carData, error: carError } = await supabase
-        .from("cars")
-        .select("quantity, available_quantity, status")
-        .eq("id", carId)
-        .single();
+      const details = Array.isArray(result) ? result[0] : result;
+      setData(details as AvailabilityDetails);
 
-      if (carError) throw carError;
-
-      // حساب الحجوزات المتداخلة
-      const { data: conflictingData, error: bookingsError } = await supabase
-        .from("bookings")
-        .select("id, status")
-        .eq("car_id", carId)
-        .in("status", ["pending", "confirmed", "payment_pending", "active"])
-        .or(`and(start_date.lte.${endDate},end_date.gte.${startDate})`);
-
-      if (bookingsError) throw bookingsError;
-
-      setAvailabilityDetails({
-        totalQuantity: carData.quantity,
-        availableQuantity: carData.available_quantity,
-        conflictingBookings: conflictingData?.length || 0,
-      });
-
-      const result = availableData === true && carData.status === "available";
-      setIsAvailable(result);
-      return result;
+      return details as AvailabilityDetails;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "حدث خطأ";
       setError(new Error(errorMessage));
-      setIsAvailable(false);
-      return false;
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -404,31 +312,46 @@ export function useCarAvailability({
   }, [enabled, carId, startDate, endDate, checkAvailability]);
 
   return {
-    isAvailable,
+    data,
+    isAvailable: data?.isAvailable ?? null,
     isLoading,
     error,
     checkAvailability,
-    availabilityDetails,
   };
 }
-
 // ============================================
 // 6. usePayment (جديد - مطلوب للدفع)
 // ============================================
-
-interface PaymentResult {
+export interface PaymentResult {
   success: boolean;
-  status: "paid" | "initiated" | "failed";
+  status: "paid" | "initiated" | "failed" | "authorized" | "refunded";
   paymentId?: string;
   transactionUrl?: string;
   message?: string;
   bookingStatus?: string;
 }
 
+// ============================================
+// usePayment Hook
+// ============================================
 export function usePayment() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // ============================================
+  // Generate UUID
+  // ============================================
+  const generateUUID = useCallback(() => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }, []);
+
+  // ============================================
+  // Create Payment
+  // ============================================
   const createPayment = useCallback(
     async (
       bookingId: string,
@@ -439,23 +362,22 @@ export function usePayment() {
         on3DSRequired?: (transactionUrl: string) => void;
       }
     ): Promise<PaymentResult | null> => {
-      function randomUUID() {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-          const r = (Math.random() * 16) | 0; // رقم عشوائي من 0 إلى 15
-          const v = c === "x" ? r : (r & 0x3) | 0x8; // تطبيق الـ variant
-          return v.toString(16);
-        });
-      }
-
       try {
         setIsLoading(true);
         setError(null);
 
+        // ✅ التحقق من الجلسة
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        if (!session) throw new Error("يجب تسجيل الدخول");
 
+        if (!session) {
+          throw new Error("يجب تسجيل الدخول");
+        }
+
+        console.log("💳 Creating payment for booking:", bookingId);
+
+        // ✅ استدعاء Edge Function المحسّن
         const response = await fetch(
           `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/create-payment`,
           {
@@ -467,37 +389,47 @@ export function usePayment() {
             body: JSON.stringify({
               bookingId,
               token,
-              idempotencyKey: randomUUID(),
+              idempotencyKey: generateUUID(),
             }),
           }
         );
 
         const result = await response.json();
 
-        if (!result.success) {
+        console.log("📥 Payment response:", {
+          success: result.success,
+          status: result.status,
+        });
+
+        // ❌ فشل الطلب
+        if (!response.ok || !result.success) {
           throw new Error(result.error || result.message || "فشل الدفع");
         }
 
-        // حالة نجاح فوري
+        // ✅ نجاح فوري
         if (result.status === "paid") {
+          console.log("✅ Payment completed immediately");
           callbacks?.onSuccess?.(result);
           return result;
         }
 
-        // حالة 3DS مطلوب
+        // 🔐 3DS مطلوب
         if (result.status === "initiated" && result.transactionUrl) {
+          console.log("🔐 3DS authentication required");
           callbacks?.on3DSRequired?.(result.transactionUrl);
           return result;
         }
 
-        // حالة فشل
+        // ❌ فشل
         if (result.status === "failed") {
+          console.log("❌ Payment failed:", result.message);
           throw new Error(result.message || "فشل الدفع");
         }
 
         return result;
       } catch (err) {
         const error = err as Error;
+        console.error("❌ createPayment error:", error.message);
         setError(error);
         callbacks?.onError?.(error);
         return null;
@@ -505,9 +437,12 @@ export function usePayment() {
         setIsLoading(false);
       }
     },
-    []
+    [generateUUID]
   );
 
+  // ============================================
+  // Check Payment Status
+  // ============================================
   const checkPaymentStatus = useCallback(
     async (
       paymentId: string,
@@ -518,14 +453,18 @@ export function usePayment() {
       }
     ): Promise<PaymentResult | null> => {
       try {
-        setIsLoading(true);
+        // ✅ لا نضع loading هنا لأنه polling
         setError(null);
 
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        if (!session) throw new Error("يجب تسجيل الدخول");
 
+        if (!session) {
+          throw new Error("يجب تسجيل الدخول");
+        }
+
+        // ✅ استدعاء Edge Function المحسّن
         const response = await fetch(
           `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/check-payment-status`,
           {
@@ -540,10 +479,7 @@ export function usePayment() {
 
         const result = await response.json();
 
-        // ✅ Log للتشخيص
-        console.log("🔍 checkPaymentStatus result:", result);
-
-        // ✅ تحقق من HTTP status أولاً
+        // ✅ تحقق من HTTP status
         if (!response.ok) {
           console.error("❌ HTTP Error:", response.status, result);
           throw new Error(
@@ -551,22 +487,29 @@ export function usePayment() {
           );
         }
 
-        // ✅ تعامل مع جميع الحالات
+        // ✅ دفع مكتمل
         if (result.success && result.status === "paid") {
+          console.log("✅ Payment verified as paid");
           callbacks?.onSuccess?.(result);
           return result;
         }
 
-        // ⏳ حالات وسطية (initiated, authorized, etc.)
+        // ⏳ لا يزال قيد المعالجة
         if (result.status === "initiated" || result.status === "authorized") {
           console.log("⏳ Payment still processing:", result.status);
-          return result; // ✅ لا ترمي error
+          return result;
         }
 
-        // ❌ حالة فشل مؤكد
+        // ❌ فشل
         if (result.status === "failed") {
           console.log("❌ Payment failed:", result.message);
-          // ✅ ارجع result مع الحالة، لا ترمي error
+          // لا نرمي error في حالة الفشل، فقط نرجع النتيجة
+          return result;
+        }
+
+        // 💰 استرجاع
+        if (result.status === "refunded") {
+          console.log("💰 Payment was refunded");
           return result;
         }
 
@@ -579,8 +522,6 @@ export function usePayment() {
         setError(error);
         callbacks?.onError?.(error);
         return null;
-      } finally {
-        setIsLoading(false);
       }
     },
     []
@@ -593,7 +534,6 @@ export function usePayment() {
     error,
   };
 }
-
 // ============================================
 // 7. useBookingValidation (جديد - مساعد)
 // ============================================
@@ -788,31 +728,67 @@ export function useBookingRealtime(onUpdate?: () => void) {
 // 10. useBookingStats
 // ============================================
 
-export function useBookingStats() {
-  const { data: bookings } = useUserBookings();
+interface BookingStats {
+  total: number;
+  pending: number;
+  confirmed: number;
+  paymentPending: number;
+  active: number;
+  completed: number;
+  cancelled: number;
+  expired: number;
+  totalSpent: number;
+}
 
-  if (!bookings) {
-    return {
-      total: 0,
-      pending: 0,
-      confirmed: 0,
-      active: 0,
-      completed: 0,
-      cancelled: 0,
-      expired: 0,
-      totalSpent: 0,
-    };
-  }
+export function useBookingStats() {
+  const [data, setData] = useState<BookingStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // ✅ استخدام الدالة بدلاً من حساب يدوي
+      const { data: result, error: rpcError } = await supabase.rpc(
+        "get_user_booking_stats",
+        {
+          p_user_id: null, // null = المستخدم الحالي
+        }
+      );
+
+      if (rpcError) throw rpcError;
+
+      const stats = Array.isArray(result) ? result[0] : result;
+
+      setData({
+        total: Number(stats.total) || 0,
+        pending: Number(stats.pending) || 0,
+        confirmed: Number(stats.confirmed) || 0,
+        paymentPending: Number(stats.payment_pending) || 0,
+        active: Number(stats.active) || 0,
+        completed: Number(stats.completed) || 0,
+        cancelled: Number(stats.cancelled) || 0,
+        expired: Number(stats.expired) || 0,
+        totalSpent: Number(stats.total_spent) || 0,
+      });
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   return {
-    total: bookings.length,
-    pending: bookings.filter((b) => b.status === "pending").length,
-    confirmed: bookings.filter((b) => b.status === "confirmed").length,
-    active: bookings.filter((b) => b.status === "active").length,
-    completed: bookings.filter((b) => b.status === "completed").length,
-    cancelled: bookings.filter((b) => b.status === "cancelled").length,
-    expired: bookings.filter((b) => b.status === "expired").length,
-    totalSpent: bookings.reduce((sum, b) => sum + (b.final_amount || 0), 0),
+    data,
+    isLoading,
+    error,
+    refetch: fetchStats,
   };
 }
 

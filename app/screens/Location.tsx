@@ -281,11 +281,10 @@ export default function LocationScreen() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.rpc("update_user_profile", {
-        _location: location.location,
+      const { error } = await supabase.rpc("update_user_location", {
+        _location: location.location || null,
         _user_latitude: location.user_latitude,
         _user_longitude: location.user_longitude,
-        _location_accuracy: location.location_accuracy,
       });
 
       if (error) throw error;

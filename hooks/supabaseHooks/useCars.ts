@@ -1,10 +1,14 @@
 // ============================
-// hooks/useCars.ts - Cars Logic Hook (Enhanced with Load More)
+// hooks/useCars.ts - Enhanced Version (Final)
 // ============================
 
 import { CarWithImages } from "@/types/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
+
+// ============================
+// Types
+// ============================
 
 interface NearestCarResult {
   car_id: string;
@@ -22,10 +26,11 @@ interface NearestCarResult {
   transmission: string;
   is_new: boolean;
   discount_percentage: number;
+  actual_available_quantity: number;
 }
 
 export interface SearchResult {
-  car_id: string;
+  id: string;
   brand_name_ar: string;
   brand_name_en: string;
   model_name_ar: string;
@@ -34,16 +39,24 @@ export interface SearchResult {
   main_image_url: string;
   color_name_ar: string;
   color_name_en: string;
-  daily_price: number | null;
+  daily_price: number;
+  weekly_price: number | null;
+  monthly_price: number | null;
   seats: number;
   fuel_type: string;
   transmission: string;
   branch_name_ar: string;
   branch_name_en: string;
+  branch_id: string;
   distance_km: number | null;
   is_new: boolean;
   discount_percentage: number;
   status: string;
+  actual_available_quantity: number;
+  features_ar: string[];
+  features_en: string[];
+  relevance_score: number;
+  total_results: number;
 }
 
 interface Suggestion {
@@ -59,6 +72,9 @@ interface SearchFilters {
   transmission: string;
   showNewOnly: boolean;
   showDiscountedOnly: boolean;
+  rentalType?: "daily" | "weekly" | "monthly" | "ownership";
+  brandId?: string;
+  branchId?: string;
 }
 
 interface UserLocation {
@@ -66,26 +82,25 @@ interface UserLocation {
   lon: number;
 }
 
-interface CarOffer {
-  id: string;
-  car_id: string;
-  discount_type: "percentage" | "fixed_amount" | "buy_days_get_free";
-  discount_value: number;
-  min_rental_days: number | null;
-  max_rental_days: number | null;
-  is_active: boolean;
-  valid_until: string;
+interface PriceCalculation {
+  base_price: number;
+  car_discount_percentage: number;
+  car_discount_amount: number;
+  price_after_car_discount: number;
+  total_days: number;
+  subtotal: number;
+  booking_discount_amount: number;
+  final_amount: number;
+  total_savings: number;
+  total_savings_percentage: number;
 }
 
-interface PriceCalculationResult {
-  originalPrice: number;
-  finalPrice: number;
-  discount: number;
-  appliedOffer: CarOffer | null;
-}
+// ============================
+// Main Hook
+// ============================
 
 export const useCars = () => {
-  // State with proper TypeScript types
+  // State
   const [cars, setCars] = useState<CarWithImages[]>([]);
   const [nearestCars, setNearestCars] = useState<NearestCarResult[]>([]);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -99,31 +114,61 @@ export const useCars = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const ITEMS_PER_PAGE = 10;
 
-  // Refs for request control and race condition prevention
+  // Refs for request control
   const searchControllerRef = useRef<AbortController | null>(null);
   const suggestionsControllerRef = useRef<AbortController | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
   const lastSearchQueryRef = useRef<string>("");
   const lastSuggestionsQueryRef = useRef<string>("");
 
-  // Helper function to handle AbortController cleanup
+  // Cache refs for performance
+  const carsCache = useRef<Map<string, CarWithImages>>(new Map());
+  const priceCache = useRef<Map<string, PriceCalculation>>(new Map());
+
+  // ============================
+  // Helper Functions
+  // ============================
+
   const cleanupController = useCallback(
     (controllerRef: React.MutableRefObject<AbortController | null>) => {
       if (controllerRef.current) {
         controllerRef.current.abort();
+        controllerRef.current = null;
       }
     },
     []
   );
 
-  // Enhanced fetchCars with pagination support
+  const buildCacheKey = useCallback(
+    (
+      carId: string,
+      startDate?: string,
+      endDate?: string,
+      rentalType?: string
+    ) => {
+      return `${carId}-${startDate || "now"}-${endDate || "now"}-${
+        rentalType || "daily"
+      }`;
+    },
+    []
+  );
+
+  // ============================
+  // Core Functions
+  // ============================
+
+  /**
+   * ✅ محسّن: استخدام cars_with_details view
+   */
   const fetchCars = useCallback(
     async (
       limit: number = ITEMS_PER_PAGE,
       page: number = 1,
-      append: boolean = false
+      append: boolean = false,
+      filters?: Partial<SearchFilters>
     ): Promise<CarWithImages[]> => {
       try {
         if (!append) {
@@ -136,71 +181,66 @@ export const useCars = () => {
         const from = (page - 1) * limit;
         const to = from + limit - 1;
 
-        // ✅ تغيير: استخدام cars مع joins بدلاً من cars_with_images
-        const { data, error, count } = await supabase
-          .from("cars")
-          .select(
-            `
-            *,
-            model:car_models!inner (
-              *,
-              brand:car_brands!inner (
-                id,
-                name_ar,
-                name_en,
-                logo_url,
-                is_active
-              )
-            ),
-            color:car_colors!inner (
-              id,
-              name_ar,
-              name_en,
-              hex_code,
-              is_active
-            ),
-            branch:branches!inner (
-              id,
-              name_ar,
-              name_en,
-              location_ar,
-              location_en,
-              latitude,
-              longitude,
-              phone,
-              is_active
-            )
-          `,
-            { count: "exact" }
-          )
-          .eq("status", "available")
-          .gt("available_quantity", 0)
-          .order("created_at", { ascending: false })
-          .range(from, to);
+        // ✅ استخدام View الجاهز بدلاً من joins يدوية
+        let query = supabase
+          .from("cars_with_details")
+          .select("*", { count: "exact" })
+          .eq("status", "available");
+
+        // ✅ فلترة بناءً على التوفر الفعلي (من الـ view)
+        query = query.gt("actual_available_quantity", 0);
+
+        // ✅ تطبيق الفلاتر الإضافية
+        if (filters?.showNewOnly) {
+          query = query.eq("is_new", true);
+        }
+
+        if (filters?.showDiscountedOnly) {
+          query = query.gt("discount_percentage", 0);
+        }
+
+        if (filters?.seats && filters.seats !== "all") {
+          query = query.eq("seats", parseInt(filters.seats));
+        }
+
+        if (filters?.fuelType && filters.fuelType !== "all") {
+          query = query.eq("fuel_type", filters.fuelType);
+        }
+
+        if (filters?.transmission && filters.transmission !== "all") {
+          query = query.eq("transmission", filters.transmission);
+        }
+
+        if (filters?.minPrice) {
+          query = query.gte("daily_price", parseFloat(filters.minPrice));
+        }
+
+        if (filters?.maxPrice) {
+          query = query.lte("daily_price", parseFloat(filters.maxPrice));
+        }
+
+        if (filters?.branchId) {
+          query = query.eq("branch_id", filters.branchId);
+        }
+
+        if (filters?.brandId) {
+          query = query.eq("brand_id", filters.brandId);
+        }
+
+        // الترتيب
+        query = query.order("created_at", { ascending: false });
+
+        // Pagination
+        const { data, error, count } = await query.range(from, to);
 
         if (error) throw error;
 
-        // تحويل البيانات لنفس الشكل القديم
-        const formattedCars = (data || []).map((car) => ({
-          ...car,
-          brand_name_ar: car.model?.brand?.name_ar,
-          brand_name_en: car.model?.brand?.name_en,
-          brand_logo_url: car.model?.brand?.logo_url,
-          model_name_ar: car.model?.name_ar,
-          model_name_en: car.model?.name_en,
-          model_year: car.model?.year,
-          main_image_url: car.model?.default_image_url,
-          model_description_ar: car.model?.description_ar,
-          model_description_en: car.model?.description_en,
-          specifications: car.model?.specifications,
-          color_name_ar: car.color?.name_ar,
-          color_name_en: car.color?.name_en,
-          hex_code: car.color?.hex_code,
-          branch_name_ar: car.branch?.name_ar,
-          branch_name_en: car.branch?.name_en,
-          branch_location_ar: car.branch?.location_ar,
-          branch_location_en: car.branch?.location_en,
-        })) as CarWithImages[];
+        const formattedCars = (data || []) as CarWithImages[];
+
+        // ✅ تحديث الـ cache
+        formattedCars.forEach((car) => {
+          carsCache.current.set(car.id, car);
+        });
 
         if (append) {
           setCars((prevCars) => {
@@ -216,6 +256,12 @@ export const useCars = () => {
           setHasReachedEnd(false);
         }
 
+        // ✅ تحديث العدد الكلي
+        if (count !== null) {
+          setTotalCount(count);
+        }
+
+        // تحديث حالة النهاية
         if (
           formattedCars.length < limit ||
           (count && from + formattedCars.length >= count)
@@ -226,6 +272,7 @@ export const useCars = () => {
         return formattedCars;
       } catch (err: unknown) {
         const error = err as Error;
+        console.error("Error fetching cars:", error);
         setError(error.message);
         return [];
       } finally {
@@ -235,11 +282,13 @@ export const useCars = () => {
     },
     []
   );
-  // Load more cars function
+
+  /**
+   * ✅ Load more cars function
+   */
   const loadMoreCars = useCallback(async (): Promise<void> => {
     if (loadingMore || hasReachedEnd) return;
 
-    // Cancel any ongoing load more request
     cleanupController(loadMoreControllerRef);
     loadMoreControllerRef.current = new AbortController();
 
@@ -255,13 +304,15 @@ export const useCars = () => {
     }
   }, [loadingMore, hasReachedEnd, currentPage, fetchCars, cleanupController]);
 
-  // Search cars with proper error handling and race condition prevention
+  /**
+   * ✅ محسّن: searchCars مع كل الفلاتر
+   */
   const searchCars = useCallback(
     async (
       searchQuery: string,
       language: "ar" | "en",
       filters: SearchFilters,
-      sortBy: string,
+      sortBy: string = "relevance",
       userLocation?: UserLocation
     ): Promise<SearchResult[]> => {
       // Cleanup previous request
@@ -277,29 +328,24 @@ export const useCars = () => {
         lastSearchQueryRef.current = searchQuery;
 
         const { data, error } = await supabase.rpc("search_cars", {
-          search_query: searchQuery || null,
-          search_language: language,
-          min_price: filters.minPrice ? parseFloat(filters.minPrice) : null,
-          max_price: filters.maxPrice ? parseFloat(filters.maxPrice) : null,
-          min_seats:
-            filters.seats && filters.seats !== "all"
-              ? parseInt(filters.seats)
-              : null,
-          fuel_types:
-            filters.fuelType && filters.fuelType !== "all"
-              ? [filters.fuelType]
-              : null,
-          transmission_types:
+          p_search_query: searchQuery || null,
+          p_brand_id: filters.brandId || null,
+          p_model_id: null,
+          p_branch_id: filters.branchId || null,
+          p_min_price: filters.minPrice ? parseFloat(filters.minPrice) : null,
+          p_max_price: filters.maxPrice ? parseFloat(filters.maxPrice) : null,
+          p_transmission:
             filters.transmission && filters.transmission !== "all"
-              ? [filters.transmission]
+              ? filters.transmission
               : null,
-          include_new_only: filters.showNewOnly,
-          include_discounted_only: filters.showDiscountedOnly,
-          sort_by: sortBy,
-          page_size: 20,
-          page_number: 1,
-          user_lat: userLocation?.lat || null,
-          user_lon: userLocation?.lon || null,
+          p_fuel_type:
+            filters.fuelType && filters.fuelType !== "all"
+              ? filters.fuelType
+              : null,
+          p_rental_type: filters.rentalType || "daily",
+          p_sort_by: sortBy || "relevance",
+          p_limit: 50,
+          p_offset: 0,
         });
 
         // Check if request was aborted or query changed
@@ -312,7 +358,23 @@ export const useCars = () => {
 
         if (error) throw error;
 
-        const results = data || [];
+        let results = (data || []) as SearchResult[];
+
+        // ✅ فلترة إضافية في Frontend للفلاتر التي لا تدعمها search_cars
+        if (filters.showNewOnly) {
+          results = results.filter((car) => car.is_new);
+        }
+
+        if (filters.showDiscountedOnly) {
+          results = results.filter((car) => car.discount_percentage > 0);
+        }
+
+        if (filters.seats && filters.seats !== "all") {
+          results = results.filter(
+            (car) => car.seats === parseInt(filters.seats)
+          );
+        }
+
         setSearchResults(results);
         return results;
       } catch (err: unknown) {
@@ -337,7 +399,9 @@ export const useCars = () => {
     [cleanupController]
   );
 
-  // Get quick suggestions with debouncing and race condition prevention
+  /**
+   * ✅ الإبقاء على quick_search_suggestions كما هو
+   */
   const getQuickSuggestions = useCallback(
     async (
       term: string,
@@ -395,7 +459,9 @@ export const useCars = () => {
     [cleanupController]
   );
 
-  // Get nearest cars
+  /**
+   * ✅ محسّن: getNearestCars مع actual_available_quantity
+   */
   const getNearestCars = useCallback(
     async (
       latitude: number,
@@ -414,11 +480,12 @@ export const useCars = () => {
 
         if (error) throw error;
 
-        const results = data || [];
+        const results = (data || []) as NearestCarResult[];
         setNearestCars(results);
         return results;
       } catch (err: unknown) {
         const error = err as Error;
+        console.error("Error getting nearest cars:", error);
         setError(error.message);
         return [];
       } finally {
@@ -428,7 +495,9 @@ export const useCars = () => {
     []
   );
 
-  // Check car availability
+  /**
+   * ✅ محسّن: checkCarAvailability
+   */
   const checkCarAvailability = useCallback(
     async (
       carId: string,
@@ -453,62 +522,53 @@ export const useCars = () => {
     []
   );
 
-  // Get car by ID
+  /**
+   * ✅ محسّن: getCarById مع cache واستخدام view
+   */
   const getCarById = useCallback(
     async (carId: string): Promise<CarWithImages | null> => {
       try {
+        // ✅ تحقق من الـ cache أولاً
+        if (carsCache.current.has(carId)) {
+          const cachedCar = carsCache.current.get(carId)!;
+          setSelectedCar(cachedCar);
+          return cachedCar;
+        }
+
         setLoading(true);
 
-        // ✅ جلب من cars بدلاً من cars_with_images
+        // ✅ استخدام View بدلاً من joins يدوية
         const { data, error } = await supabase
-          .from("cars")
-          .select(
-            `
-            *,
-            model:car_models!inner (
-              *,
-              brand:car_brands!inner (*)
-            ),
-            color:car_colors!inner (*),
-            branch:branches!inner (*)
-          `
-          )
+          .from("cars_with_details")
+          .select("*")
           .eq("id", carId)
           .single();
 
         if (error) throw error;
 
-        // ✅ تحقق إضافي من الحالة
-        if (data.status !== "available" || data.available_quantity <= 0) {
+        // ✅ تحقق من التوفر الفعلي
+        if (
+          data.status !== "available" ||
+          data.actual_available_quantity <= 0
+        ) {
           console.warn("Car not available:", {
             status: data.status,
-            available_quantity: data.available_quantity,
+            available_quantity: data.actual_available_quantity,
           });
           setError("عذراً، هذه السيارة لم تعد متاحة");
           return null;
         }
 
-        // تحويل البيانات لنفس الشكل
-        const formattedCar = {
-          ...data,
-          brand_name_ar: data.model?.brand?.name_ar,
-          brand_name_en: data.model?.brand?.name_en,
-          brand_logo_url: data.model?.brand?.logo_url,
-          model_name_ar: data.model?.name_ar,
-          model_name_en: data.model?.name_en,
-          model_year: data.model?.year,
-          main_image_url: data.model?.default_image_url,
-          color_name_ar: data.color?.name_ar,
-          color_name_en: data.color?.name_en,
-          hex_code: data.color?.hex_code,
-          branch_name_ar: data.branch?.name_ar,
-          branch_name_en: data.branch?.name_en,
-        } as CarWithImages;
+        const formattedCar = data as CarWithImages;
+
+        // ✅ حفظ في الـ cache
+        carsCache.current.set(carId, formattedCar);
 
         setSelectedCar(formattedCar);
         return formattedCar;
       } catch (err: unknown) {
         const error = err as Error;
+        console.error("Error fetching car:", error);
         setError(error.message);
         return null;
       } finally {
@@ -518,137 +578,119 @@ export const useCars = () => {
     []
   );
 
-  // Get active offers
-  const getActiveOffers = useCallback(
-    async (carId?: string): Promise<CarOffer[]> => {
+  /**
+   * ✅ جديد: استخدام calculate_booking_price من قاعدة البيانات
+   */
+  const calculatePriceWithDates = useCallback(
+    async (
+      carId: string,
+      rentalType: "daily" | "weekly" | "monthly" | "ownership",
+      startDate: string,
+      endDate: string,
+      discountPercentage: number = 0,
+      discountAmount: number = 0
+    ): Promise<PriceCalculation | null> => {
       try {
-        let query = supabase
-          .from("car_offers")
-          .select(
-            `
-          *,
-          car:cars!inner(*)
-        `
-          )
-          .eq("is_active", true)
-          .gte("valid_until", new Date().toISOString());
-
-        if (carId) {
-          query = query.eq("car_id", carId);
+        // ✅ تحقق من الـ cache
+        const cacheKey = buildCacheKey(carId, startDate, endDate, rentalType);
+        if (priceCache.current.has(cacheKey)) {
+          return priceCache.current.get(cacheKey)!;
         }
 
-        const { data, error } = await query;
+        // ✅ استخدام الدالة من قاعدة البيانات بدلاً من الحساب اليدوي
+        const { data, error } = await supabase.rpc("calculate_booking_price", {
+          p_car_id: carId,
+          p_rental_type: rentalType,
+          p_start_date: startDate,
+          p_end_date: endDate,
+          p_discount_percentage: discountPercentage,
+          p_discount_amount: discountAmount,
+        });
 
         if (error) throw error;
-        return data || [];
+
+        const result = data?.[0] as PriceCalculation;
+
+        // ✅ حفظ في الـ cache
+        if (result) {
+          priceCache.current.set(cacheKey, result);
+        }
+
+        return result;
       } catch (err: unknown) {
         const error = err as Error;
-        console.error("Error fetching offers:", error.message);
-        return [];
+        console.error("Error calculating price:", error);
+        return null;
       }
+    },
+    [buildCacheKey]
+  );
+
+  /**
+   * ✅ جديد: حساب سريع للسعر بدون تواريخ (للعرض السريع فقط)
+   */
+  const calculateQuickPrice = useCallback(
+    (
+      car: CarWithImages,
+      rentalType: "daily" | "weekly" | "monthly",
+      days: number = 1
+    ): number => {
+      let basePrice = 0;
+
+      switch (rentalType) {
+        case "daily":
+          basePrice = car.daily_price * days;
+          break;
+        case "weekly":
+          const weeks = Math.ceil(days / 7);
+          basePrice = car.weekly_price
+            ? car.weekly_price * weeks
+            : car.daily_price * days;
+          break;
+        case "monthly":
+          const months = Math.ceil(days / 30);
+          basePrice = car.monthly_price
+            ? car.monthly_price * months
+            : car.daily_price * days;
+          break;
+      }
+
+      // ✅ تطبيق خصم السيارة إن وُجد
+      if (car.discount_percentage > 0) {
+        // تحقق من صلاحية العرض
+        if (
+          !car.offer_expires_at ||
+          new Date(car.offer_expires_at) > new Date()
+        ) {
+          const discount = basePrice * (car.discount_percentage / 100);
+          basePrice -= discount;
+        }
+      }
+
+      return Math.max(0, basePrice);
     },
     []
   );
 
-  // Calculate price with offers
-  const calculatePriceWithOffers = useCallback(
-    async (
-      carId: string,
-      rentalDays: number,
-      rentalType: "daily" | "weekly" | "monthly" = "daily"
-    ): Promise<PriceCalculationResult> => {
-      try {
-        const offers = await getActiveOffers(carId);
-        const car =
-          cars.find((c: CarWithImages) => c.id === carId) || selectedCar;
+  /**
+   * ✅ Refresh function that resets pagination
+   */
+  const refreshCars = useCallback(
+    async (filters?: Partial<SearchFilters>): Promise<void> => {
+      // ✅ مسح الـ cache
+      carsCache.current.clear();
+      priceCache.current.clear();
 
-        if (!car) {
-          return {
-            originalPrice: 0,
-            finalPrice: 0,
-            discount: 0,
-            appliedOffer: null,
-          };
-        }
-
-        let basePrice = 0;
-        switch (rentalType) {
-          case "daily":
-            basePrice = car.daily_price * rentalDays;
-            break;
-          case "weekly":
-            basePrice = car.weekly_price
-              ? car.weekly_price * Math.ceil(rentalDays / 7)
-              : car.daily_price * rentalDays;
-            break;
-          case "monthly":
-            basePrice = car.monthly_price
-              ? car.monthly_price * Math.ceil(rentalDays / 30)
-              : car.daily_price * rentalDays;
-            break;
-        }
-
-        let bestOffer: CarOffer | null = null;
-        let maxDiscount = 0;
-
-        // Find best offer
-        for (const offer of offers) {
-          if (
-            rentalDays >= (offer.min_rental_days || 1) &&
-            (!offer.max_rental_days || rentalDays <= offer.max_rental_days)
-          ) {
-            let discount = 0;
-
-            switch (offer.discount_type) {
-              case "percentage":
-                discount = basePrice * (offer.discount_value / 100);
-                break;
-              case "fixed_amount":
-                discount = offer.discount_value;
-                break;
-              case "buy_days_get_free":
-                const freeDays = Math.floor(rentalDays / offer.discount_value);
-                discount = car.daily_price * freeDays;
-                break;
-            }
-
-            if (discount > maxDiscount) {
-              maxDiscount = discount;
-              bestOffer = offer;
-            }
-          }
-        }
-
-        const finalPrice = Math.max(0, basePrice - maxDiscount);
-
-        return {
-          originalPrice: basePrice,
-          finalPrice,
-          discount: maxDiscount,
-          appliedOffer: bestOffer,
-        };
-      } catch (err: unknown) {
-        const error = err as Error;
-        console.error("Error calculating price:", error.message);
-        return {
-          originalPrice: 0,
-          finalPrice: 0,
-          discount: 0,
-          appliedOffer: null,
-        };
-      }
+      setCurrentPage(1);
+      setHasReachedEnd(false);
+      await fetchCars(ITEMS_PER_PAGE, 1, false, filters);
     },
-    [cars, selectedCar, getActiveOffers]
+    [fetchCars]
   );
 
-  // Refresh function that resets pagination
-  const refreshCars = useCallback(async (): Promise<void> => {
-    setCurrentPage(1);
-    setHasReachedEnd(false);
-    await fetchCars(ITEMS_PER_PAGE, 1, false);
-  }, [fetchCars]);
-
-  // State management functions
+  /**
+   * ✅ State management functions
+   */
   const resetState = useCallback((): void => {
     // Cancel any ongoing requests
     cleanupController(searchControllerRef);
@@ -663,8 +705,13 @@ export const useCars = () => {
     setError(null);
     setCurrentPage(1);
     setHasReachedEnd(false);
+    setTotalCount(0);
     lastSearchQueryRef.current = "";
     lastSuggestionsQueryRef.current = "";
+
+    // ✅ مسح الـ cache
+    carsCache.current.clear();
+    priceCache.current.clear();
   }, [cleanupController]);
 
   const clearSearchResults = useCallback((): void => {
@@ -679,17 +726,45 @@ export const useCars = () => {
     lastSuggestionsQueryRef.current = "";
   }, [cleanupController]);
 
+  // ============================
   // Memoized values for performance
+  // ============================
+
   const hasSearchResults = useMemo(
     () => searchResults.length > 0,
     [searchResults.length]
   );
+
   const hasSuggestions = useMemo(
     () => suggestions.length > 0,
     [suggestions.length]
   );
+
   const hasCars = useMemo(() => cars.length > 0, [cars.length]);
+
   const hasMoreCars = useMemo(() => !hasReachedEnd, [hasReachedEnd]);
+
+  // ✅ جديد: نسبة التحميل
+  const loadingProgress = useMemo(() => {
+    if (totalCount === 0) return 0;
+    return Math.round((cars.length / totalCount) * 100);
+  }, [cars.length, totalCount]);
+
+  // ✅ جديد: إحصائيات
+  const statistics = useMemo(
+    () => ({
+      total: cars.length,
+      new: cars.filter((c) => c.is_new).length,
+      discounted: cars.filter((c) => c.discount_percentage > 0).length,
+      available: cars.filter((c: any) => c.actual_available_quantity > 0)
+        .length,
+    }),
+    [cars]
+  );
+
+  // ============================
+  // Effects
+  // ============================
 
   // Initialize data on mount
   useEffect(() => {
@@ -704,6 +779,10 @@ export const useCars = () => {
       cleanupController(loadMoreControllerRef);
     };
   }, [cleanupController]);
+
+  // ============================
+  // Return
+  // ============================
 
   return {
     // Data
@@ -722,12 +801,15 @@ export const useCars = () => {
     // Pagination state
     currentPage,
     hasReachedEnd,
+    totalCount, // ✅ جديد
+    loadingProgress, // ✅ جديد
 
     // Computed values
     hasSearchResults,
     hasSuggestions,
     hasCars,
     hasMoreCars,
+    statistics, // ✅ جديد
 
     // Core functions
     fetchCars,
@@ -739,13 +821,13 @@ export const useCars = () => {
 
     // Search functions
     searchCars,
-    getQuickSuggestions,
+    getQuickSuggestions, // ✅ بقي كما هو
     clearSearchResults,
     clearSuggestions,
 
-    // Offers and pricing
-    getActiveOffers,
-    calculatePriceWithOffers,
+    // Pricing functions
+    calculatePriceWithDates, // ✅ جديد - يستخدم قاعدة البيانات
+    calculateQuickPrice, // ✅ جديد - للعرض السريع
 
     // Utility functions
     resetState,

@@ -117,7 +117,12 @@ export default function HomeScreen() {
       await Promise.all([
         refetchAnnouncements(),
         refreshCars(),
-        getCurrentLocation({ forceRefresh: true }),
+        getCurrentLocation({
+          forceRefresh: true,
+          fallbackToDefault: true,
+          defaultCity: "jeddah",
+          timeout: 5000,
+        }),
       ]);
     } catch (error) {
       console.error("خطأ في التحديث:", error);
@@ -444,9 +449,18 @@ export default function HomeScreen() {
     );
   }, [allCarsData.length, styles, colors, currentLanguage]);
 
-  // Effects at the bottom
+  // ✅ التعديل الرئيسي: طلب الموقع بشكل صامت مع fallback
   useEffect(() => {
-    getCurrentLocation();
+    getCurrentLocation({
+      fallbackToDefault: true, // استخدام موقع افتراضي عند الفشل
+      defaultCity: "jeddah", // جدة كموقع افتراضي
+      enableHighAccuracy: false, // دقة متوسطة (أسرع وأقل استهلاك للبطارية)
+      timeout: 5000, // انتظار 5 ثواني فقط
+      maxAge: 60 * 60 * 1000, // استخدام موقع محفوظ لمدة ساعة
+    }).catch((error) => {
+      // تجاهل الأخطاء - الموقع الافتراضي سيُستخدم تلقائياً
+      console.log("Using default location:", error.message);
+    });
   }, [getCurrentLocation]);
 
   useEffect(() => {

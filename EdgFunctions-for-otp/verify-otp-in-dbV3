@@ -1,0 +1,356 @@
+// deno-lint-ignore-file no-explicit-any
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// ========================================================================
+// إعداد CORS
+// ========================================================================
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-requested-with, accept",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "86400"
+};
+// ========================================================================
+// قراءة متغيرات البيئة
+// ========================================================================
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const AUTHENTICA_API_KEY = "$2y$10$P7V123TDwDF5bGBqP3D3f.LXr8NyXfu5Vo6CAilmL66tHS9w6jPPq";
+const NODE_ENV = Deno.env.get("NODE_ENV") || "production";
+// التحقق من المتغيرات
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !AUTHENTICA_API_KEY) {
+  console.error("❌ Missing environment variables");
+  throw new Error("Missing environment variables");
+}
+// إنشاء Supabase Client
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+console.log("✅ Supabase client initialized");
+// ========================================================================
+// إعدادات عامة
+// ========================================================================
+const CONFIG = {
+  TEMP_PASSWORD_LENGTH: 16,
+  REQUEST_TIMEOUT: 30000,
+  TEMP_PASSWORD_EXPIRY_HOURS: 24,
+  RATE_LIMIT_MAX_ATTEMPTS: 5,
+  RATE_LIMIT_WINDOW_MINUTES: 15
+};
+// ========================================================================
+// دالة توليد كلمة مرور مؤقتة قوية
+// ========================================================================
+function generateTempPassword(length = CONFIG.TEMP_PASSWORD_LENGTH) {
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const numbers = "0123456789";
+  const symbols = "!@#$%^&*()-_+=[]{}|;:,.<>?";
+  const allChars = lowercase + uppercase + numbers + symbols;
+  // ضمان وجود حرف واحد على الأقل من كل نوع
+  const mandatoryChars = [
+    lowercase[Math.floor(Math.random() * lowercase.length)],
+    uppercase[Math.floor(Math.random() * uppercase.length)],
+    numbers[Math.floor(Math.random() * numbers.length)],
+    symbols[Math.floor(Math.random() * symbols.length)]
+  ];
+  // إكمال باقي الأحرف عشوائياً
+  const remaining = Array.from({
+    length: length - 4
+  }, ()=>allChars[Math.floor(Math.random() * allChars.length)]);
+  // خلط الأحرف
+  return [
+    ...mandatoryChars,
+    ...remaining
+  ].sort(()=>Math.random() - 0.5).join("");
+}
+// ========================================================================
+// دالة تنسيق رقم الجوال السعودي
+// ========================================================================
+function normalizePhoneNumber(phone) {
+  if (!phone) {
+    return {
+      normalized: "",
+      isValid: false,
+      error: "رقم الجوال مفقود"
+    };
+  }
+  // إزالة جميع الأحرف غير الرقمية ما عدا +
+  let normalized = phone.replace(/[^\d+]/g, "");
+  // تحويل الأرقام المحلية إلى دولية
+  if (normalized.startsWith("0")) {
+    normalized = "+966" + normalized.slice(1);
+  }
+  if (normalized.startsWith("5")) {
+    normalized = "+966" + normalized;
+  }
+  if (normalized.startsWith("966")) {
+    normalized = "+" + normalized;
+  }
+  // التحقق من الصيغة النهائية
+  if (!/^\+9665\d{8}$/.test(normalized)) {
+    return {
+      normalized: "",
+      isValid: false,
+      error: "صيغة رقم الجوال غير صحيحة. يجب أن يكون بصيغة: +966XXXXXXXXX"
+    };
+  }
+  return {
+    normalized,
+    isValid: true
+  };
+}
+// ========================================================================
+// دوال المساعدة للاستجابات
+// ========================================================================
+function createErrorResponse(error, status = 400) {
+  return new Response(JSON.stringify({
+    success: false,
+    error,
+    timestamp: new Date().toISOString()
+  }), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json"
+    }
+  });
+}
+function createSuccessResponse(data) {
+  return new Response(JSON.stringify({
+    success: true,
+    ...data,
+    timestamp: new Date().toISOString()
+  }), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json"
+    }
+  });
+}
+// ========================================================================
+// دالة استخراج IP من الطلب
+// ========================================================================
+function extractClientIP(req) {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+}
+// ========================================================================
+// المعالج الرئيسي
+// ========================================================================
+serve(async (req)=>{
+  // معالجة CORS Preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: corsHeaders
+    });
+  }
+  // السماح فقط بـ POST
+  if (req.method !== "POST") {
+    return createErrorResponse("يُسمح فقط بطلبات POST", 405);
+  }
+  try {
+    // ========================================================================
+    // 1. استخراج البيانات من الطلب
+    // ========================================================================
+    const body = await req.json();
+    const { phone, otp_code } = body;
+    // التحقق من البيانات الأساسية
+    if (!phone || !otp_code) {
+      return createErrorResponse("رقم الجوال أو رمز OTP مفقود");
+    }
+    // تنسيق رقم الجوال
+    const { normalized, isValid, error } = normalizePhoneNumber(phone);
+    if (!isValid) {
+      return createErrorResponse(error);
+    }
+    console.log(`📱 رقم الجوال بعد التنسيق: ${normalized}`);
+    // ========================================================================
+    // 2. التحقق من Rate Limiting
+    // ========================================================================
+    const { data: rateLimitCheck, error: rateLimitError } = await supabase.rpc("check_rate_limit", {
+      p_identifier: normalized,
+      p_action_type: "otp_verification",
+      p_max_attempts: CONFIG.RATE_LIMIT_MAX_ATTEMPTS,
+      p_window_minutes: CONFIG.RATE_LIMIT_WINDOW_MINUTES
+    });
+    if (rateLimitError || !rateLimitCheck) {
+      console.error("❌ تجاوز حد المحاولات:", rateLimitError);
+      return createErrorResponse("تجاوزت الحد الأقصى للمحاولات. يرجى المحاولة لاحقاً", 429);
+    }
+    console.log("✅ Rate limit check passed");
+    // ========================================================================
+    // 3. التحقق من OTP عبر Authentica
+    // ========================================================================
+    const authResp = await fetch("https://api.authentica.sa/api/v2/verify-otp", {
+      method: "POST",
+      headers: {
+        "X-Authorization": AUTHENTICA_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        phone: normalized,
+        otp: otp_code
+      })
+    });
+    const authData = await authResp.json();
+    if (!authData.status) {
+      console.log("❌ OTP verification failed");
+      // تسجيل المحاولة الفاشلة
+      await supabase.rpc("log_security_event", {
+        p_event_type: "otp_verification_failed",
+        p_user_id: null,
+        p_identifier: normalized,
+        p_details: {
+          reason: "invalid_otp",
+          timestamp: new Date().toISOString(),
+          ip: extractClientIP(req)
+        }
+      });
+      return createErrorResponse("رمز OTP غير صحيح");
+    }
+    console.log("✅ تم التحقق من OTP بنجاح");
+    // ========================================================================
+    // 4. جلب المستخدم من profiles
+    // ========================================================================
+    const { data: existingUser, error: profileError } = await supabase.from("profiles").select("user_id, email, full_name").eq("phone", normalized).single();
+    if (profileError || !existingUser?.user_id) {
+      console.error("❌ المستخدم غير موجود:", profileError);
+      // تسجيل الحدث
+      await supabase.rpc("log_security_event", {
+        p_event_type: "otp_user_not_found",
+        p_user_id: null,
+        p_identifier: normalized,
+        p_details: {
+          error: profileError?.message,
+          timestamp: new Date().toISOString()
+        }
+      });
+      return createErrorResponse("المستخدم غير موجود. يرجى التسجيل أولاً");
+    }
+    const userId = existingUser.user_id;
+    console.log(`👤 تم العثور على المستخدم: ${userId}`);
+    // ========================================================================
+    // 5. إنشاء كلمة مرور مؤقتة
+    // ========================================================================
+    const tempPassword = generateTempPassword();
+    const tempPasswordExpiresAt = new Date(Date.now() + CONFIG.TEMP_PASSWORD_EXPIRY_HOURS * 60 * 60 * 1000);
+    console.log("🔑 تم إنشاء كلمة مرور مؤقتة");
+    // ========================================================================
+    // 6. تحديث auth.users (كلمة المرور + metadata)
+    // ========================================================================
+    const { error: updateUserError } = await supabase.auth.admin.updateUserById(userId, {
+      password: tempPassword,
+      user_metadata: {
+        phone: normalized,
+        phone_verified: true,
+        phone_verified_at: new Date().toISOString(),
+        temp_password_set_at: new Date().toISOString(),
+        temp_password_expires_at: tempPasswordExpiresAt.toISOString()
+      }
+    });
+    if (updateUserError) {
+      console.error("❌ فشل تحديث المستخدم:", updateUserError);
+      // تسجيل الخطأ
+      await supabase.rpc("log_security_event", {
+        p_event_type: "temp_password_creation_failed",
+        p_user_id: userId,
+        p_identifier: normalized,
+        p_details: {
+          error: updateUserError.message,
+          timestamp: new Date().toISOString()
+        }
+      });
+      return createErrorResponse("فشل في تعيين كلمة المرور المؤقتة");
+    }
+    console.log("✅ تم تعيين كلمة المرور المؤقتة بنجاح");
+    // ========================================================================
+    // 7. تحديث profiles (is_verified + phone_verified_at)
+    // ========================================================================
+    const { error: updateProfileError } = await supabase.from("profiles").update({
+      is_verified: true,
+      phone_verified_at: new Date().toISOString()
+    }).eq("user_id", userId);
+    if (updateProfileError) {
+      console.error("⚠️ فشل تحديث الملف الشخصي:", updateProfileError);
+    // لا نرجع خطأ هنا لأن المستخدم تم التحقق منه فعلياً
+    } else {
+      console.log("✅ تم تحديث الملف الشخصي");
+    }
+    // ========================================================================
+    // 8. تحديث otp_requests (تغيير الحالة إلى verified)
+    // ========================================================================
+    const { error: otpUpdateError } = await supabase.from("otp_requests").update({
+      status: "verified",
+      verified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }).eq("phone", normalized).eq("status", "pending").order("created_at", {
+      ascending: false
+    }).limit(1);
+    if (otpUpdateError) {
+      console.error("⚠️ فشل تحديث otp_requests:", otpUpdateError);
+    // لا نرجع خطأ لأن العملية الأساسية نجحت
+    } else {
+      console.log("✅ تم تحديث otp_requests");
+    }
+    // ========================================================================
+    // 9. تسجيل النجاح في auth_logs
+    // ========================================================================
+    const clientIP = extractClientIP(req);
+    const userAgent = req.headers.get("user-agent") || "unknown";
+    await supabase.rpc("log_auth_attempt", {
+      p_user_id: userId,
+      p_action: "otp_verification_success",
+      p_ip_address: clientIP,
+      p_user_agent: userAgent
+    });
+    console.log("✅ تم تسجيل المحاولة في auth_logs");
+    // ========================================================================
+    // 10. تسجيل حدث أمني ناجح
+    // ========================================================================
+    await supabase.rpc("log_security_event", {
+      p_event_type: "otp_verification_success",
+      p_user_id: userId,
+      p_identifier: normalized,
+      p_details: {
+        method: "authentica",
+        temp_password_created: true,
+        temp_password_expires_at: tempPasswordExpiresAt.toISOString(),
+        ip: clientIP,
+        user_agent: userAgent
+      }
+    });
+    console.log("✅ تم تسجيل الحدث الأمني");
+    // ========================================================================
+    // 11. إرجاع النتيجة النهائية
+    // ========================================================================
+    return createSuccessResponse({
+      message: "تم التحقق من OTP وإنشاء كلمة مرور مؤقتة بنجاح",
+      temp_password: tempPassword,
+      temp_password_expires_at: tempPasswordExpiresAt.toISOString(),
+      temp_password_expires_in_hours: CONFIG.TEMP_PASSWORD_EXPIRY_HOURS,
+      user: {
+        id: userId,
+        phone: normalized,
+        email: existingUser.email,
+        full_name: existingUser.full_name
+      },
+      note: `كلمة المرور المؤقتة صالحة لمدة ${CONFIG.TEMP_PASSWORD_EXPIRY_HOURS} ساعة فقط. يرجى تسجيل الدخول وتغييرها فوراً.`
+    });
+  } catch (err) {
+    console.error("❌ خطأ غير متوقع:", err);
+    // محاولة تسجيل الخطأ
+    try {
+      await supabase.rpc("log_security_event", {
+        p_event_type: "otp_verification_error",
+        p_user_id: null,
+        p_identifier: "system",
+        p_details: {
+          error: err.message,
+          stack: err.stack,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (logError) {
+      console.error("❌ فشل تسجيل الخطأ:", logError);
+    }
+    return createErrorResponse("حدث خطأ داخلي في الخادم", 500);
+  }
+});
+console.log("🚀 Edge Function: verify-otp is running...");

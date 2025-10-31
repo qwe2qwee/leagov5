@@ -284,18 +284,6 @@ export const BookingCard: React.FC<BookingCardProps> = ({
                 </View>
               )}
 
-              {/* Date Information */}
-              <View style={styles.dateInfoRow}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.dateInfoText} numberOfLines={1}>
-                  {t.from} {booking.start_date} • {t.to} {booking.end_date}
-                </Text>
-              </View>
-
               {/* Price + Action Buttons */}
               <View style={styles.actionRow}>
                 <View

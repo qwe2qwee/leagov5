@@ -7,15 +7,21 @@ import { getLocalizedErrorMessage } from "./errorMessages";
 import { logError } from "./logError";
 import { createPhoneNormalizer } from "./phoneValidator";
 
-const FUNCTIONS_URLVeryfiy: string =
-  Constants?.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLVeryfiy ||
-  process.env.EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLVeryfiy ||
+// ✅ الحصول على الـ URLs الصحيحة
+const SUPABASE_URL =
+  Constants?.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
   "";
 
-const FUNCTIONS_URLSend: string =
-  Constants?.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLSend ||
-  process.env.EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLSend ||
+const SUPABASE_ANON_KEY =
+  Constants?.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   "";
+
+// ✅ بناء الـ URLs الصحيحة
+const FUNCTIONS_URL_BASE = `${SUPABASE_URL}/functions/v1`;
+const FUNCTIONS_URL_SEND = `${FUNCTIONS_URL_BASE}/send-otp`;
+const FUNCTIONS_URL_VERIFY = `${FUNCTIONS_URL_BASE}/verify-otp`;
 
 export interface VerifyOtpRequest {
   phone: string;
@@ -25,93 +31,164 @@ export interface VerifyOtpRequest {
 
 const phoneNormalizer = createPhoneNormalizer();
 
+// ✅ دالة مساعدة للـ Headers
+const getHeaders = () => ({
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${SUPABASE_ANON_KEY}`, // ✅ مهم جداً!
+  apikey: SUPABASE_ANON_KEY, // ✅ بعض Edge Functions تحتاجه
+});
+
+// ========================================================================
+// إرسال OTP
+// ========================================================================
 export const sendOtpRequest = async (
   phone: string,
   language: Language = "en"
 ): Promise<AuthOperationResult> => {
   try {
-    if (!FUNCTIONS_URLSend) {
-      throw new Error("Supabase functions URL not configured");
+    // ✅ التحقق من التكوين
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.error("❌ Supabase configuration missing:", {
+        hasUrl: !!SUPABASE_URL,
+        hasKey: !!SUPABASE_ANON_KEY,
+      });
+      throw new Error("Supabase not configured");
     }
 
+    console.log("📤 Sending OTP to:", phone);
+    console.log("🔗 URL:", FUNCTIONS_URL_SEND);
+
+    // ✅ التحقق من صحة الرقم
     const phoneValidation = phoneNormalizer(phone);
     if (!phoneValidation.isValid || !phoneValidation.normalized) {
+      console.error("❌ Invalid phone:", phoneValidation.error);
       return { error: phoneValidation.error };
     }
+
+    console.log("✅ Normalized phone:", phoneValidation.normalized);
 
     const requestBody: EdgeFunctionRequest = {
       phone: phoneValidation.normalized,
     };
 
-    const response = await fetch(`${FUNCTIONS_URLSend}`, {
+    console.log("📦 Request body:", requestBody);
+
+    // ✅ الطلب مع الـ Headers الصحيحة
+    const response = await fetch(FUNCTIONS_URL_SEND, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getHeaders(),
       body: JSON.stringify(requestBody),
     });
 
+    console.log("📡 Response status:", response.status);
+
     const json = await response.json();
-    if (!response.ok) throw json || new Error("Failed to send OTP");
+    console.log("📥 Response data:", json);
+
+    if (!response.ok) {
+      console.error("❌ Request failed:", json);
+      throw json || new Error("Failed to send OTP");
+    }
+
+    if (!json.success) {
+      console.error("❌ OTP send failed:", json);
+      return { error: json.error || "Failed to send OTP" };
+    }
+
+    console.log("✅ OTP sent successfully!");
     return { data: json };
-  } catch (error) {
+  } catch (error: any) {
+    console.error("❌ sendOtpRequest error:", error);
     logError("SEND_OTP_REQUEST", error, { phone });
+
     return {
-      error: getLocalizedErrorMessage("networkError", language),
+      error:
+        error?.error ||
+        error?.message ||
+        getLocalizedErrorMessage("networkError", language),
     };
   }
 };
 
+// ========================================================================
+// التحقق من OTP
+// ========================================================================
 export const verifyOtpRequest = async (
   phone: string,
   token: string,
-  sessionId?: string, // Optional session ID
+  sessionId?: string,
   language: Language = "en"
 ): Promise<AuthOperationResult> => {
   try {
-    if (!FUNCTIONS_URLVeryfiy) {
-      throw new Error("Supabase functions URL not configured");
+    // ✅ التحقق من التكوين
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.error("❌ Supabase configuration missing");
+      throw new Error("Supabase not configured");
     }
 
+    console.log("📤 Verifying OTP for:", phone);
+    console.log("🔗 URL:", FUNCTIONS_URL_VERIFY);
+
+    // ✅ التحقق من صحة الرقم
     const phoneValidation = phoneNormalizer(phone);
     if (!phoneValidation.isValid || !phoneValidation.normalized) {
+      console.error("❌ Invalid phone:", phoneValidation.error);
       return { error: phoneValidation.error };
     }
 
-    if (!token || typeof token !== "string") {
+    // ✅ التحقق من OTP
+    if (!token || typeof token !== "string" || token.trim().length === 0) {
+      console.error("❌ Invalid OTP token");
       return { error: "OTP code is required" };
     }
 
+    console.log("✅ Normalized phone:", phoneValidation.normalized);
+    console.log("✅ OTP token length:", token.length);
+
     const requestBody: VerifyOtpRequest = {
       phone: phoneValidation.normalized,
-      otp_code: token, // Changed from token to otp_code
+      otp_code: token,
       ...(sessionId && { session_id: sessionId }),
     };
 
-    // 🔍 Debug log
-    console.log("📤 VERIFY_OTP_REQUEST BODY:", requestBody);
+    console.log("📦 Request body:", {
+      ...requestBody,
+      otp_code: "***", // إخفاء OTP في الـ logs
+    });
 
-    const response = await fetch(`${FUNCTIONS_URLVeryfiy}`, {
+    // ✅ الطلب مع الـ Headers الصحيحة
+    const response = await fetch(FUNCTIONS_URL_VERIFY, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getHeaders(),
       body: JSON.stringify(requestBody),
     });
 
-    const json = await response.json();
+    console.log("📡 Response status:", response.status);
 
-    // 🔍 Debug log
-    console.log("📥 VERIFY_OTP_RESPONSE:", json);
+    const json = await response.json();
+    console.log("📥 Response data:", {
+      ...json,
+      temp_password: json.temp_password ? "***" : undefined,
+    });
 
     if (!response.ok) {
+      console.error("❌ Verification failed:", json);
       throw json || new Error("OTP verification failed");
     }
 
-    // Handle successful response with temp_password
-    if (json.success && json.temp_password) {
-      console.log("✅ OTP verified! Temporary password received");
-      // Store temp password securely for immediate use
+    if (!json.success) {
+      console.error("❌ OTP invalid:", json);
+      return { error: json.error || "Invalid OTP code" };
+    }
+
+    // ✅ نجح التحقق
+    console.log("✅ OTP verified successfully!");
+
+    if (json.temp_password) {
+      console.log("✅ Temporary password received");
       return {
         data: {
           ...json,
-          // Make sure to use temp_password for sign-in
           tempPassword: json.temp_password,
         },
       };
@@ -119,16 +196,34 @@ export const verifyOtpRequest = async (
 
     return { data: json };
   } catch (error: any) {
-    logError("VERIFY_OTP_REQUEST", error, { phone, token });
+    console.error("❌ verifyOtpRequest error:", error);
+    logError("VERIFY_OTP_REQUEST", error, { phone, token: "***" });
 
-    // Return server error message directly
-    if (error?.error || error?.message) {
-      return { error: error.error || error.message };
-    }
-
-    // Default fallback
     return {
-      error: getLocalizedErrorMessage("networkError", language),
+      error:
+        error?.error ||
+        error?.message ||
+        getLocalizedErrorMessage("networkError", language),
     };
   }
+};
+
+// ========================================================================
+// دالة اختبار (للتطوير فقط)
+// ========================================================================
+export const testConfiguration = () => {
+  console.log("🔧 Edge Functions Configuration:");
+  console.log("  SUPABASE_URL:", SUPABASE_URL?.substring(0, 30) + "...");
+  console.log(
+    "  SUPABASE_ANON_KEY:",
+    SUPABASE_ANON_KEY ? "✅ Set" : "❌ Missing"
+  );
+  console.log("  SEND URL:", FUNCTIONS_URL_SEND);
+  console.log("  VERIFY URL:", FUNCTIONS_URL_VERIFY);
+
+  return {
+    isConfigured: !!(SUPABASE_URL && SUPABASE_ANON_KEY),
+    sendUrl: FUNCTIONS_URL_SEND,
+    verifyUrl: FUNCTIONS_URL_VERIFY,
+  };
 };

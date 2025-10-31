@@ -5,8 +5,9 @@ import {
   TabTrigger,
   TabTriggerSlotProps,
 } from "expo-router/ui";
-import React from "react";
+import React, { useEffect } from "react";
 import {
+  Alert,
   Image,
   ImageSourcePropType,
   StyleSheet,
@@ -17,8 +18,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { icons } from "@/constants";
 import { useTabBarHeight } from "@/context/TabBarHeightContext";
+import { useAuth } from "@/hooks/supabaseHooks/auth/context";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
+import { blockNonCustomers } from "@/utils/roleCheck";
+import { router } from "expo-router";
 
 // زر التاب مع تحسينات
 interface CustomTabButtonProps
@@ -87,6 +91,31 @@ export default function TabLayout() {
   const { isSmallScreen, isMediumScreen } = useResponsive();
   const { colors } = useTheme();
   const { setHeight } = useTabBarHeight();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    const checkUserAccess = async () => {
+      if (!loading && user) {
+        try {
+          await blockNonCustomers();
+          console.log("✅ User access verified");
+        } catch (error) {
+          console.error("❌ Access denied:", error);
+          Alert.alert("تنبيه", "هذا التطبيق مخصص للعملاء فقط", [
+            {
+              text: "حسناً",
+              onPress: () => {
+                // إعادة توجيه للصفحة الرئيسية
+                router.replace("/");
+              },
+            },
+          ]);
+        }
+      }
+    };
+
+    checkUserAccess();
+  }, [user, loading]);
 
   const getTabBarHeight = () => {
     if (isSmallScreen) return 70;

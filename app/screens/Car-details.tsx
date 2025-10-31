@@ -37,7 +37,7 @@ export default function CarDetailsScreen() {
   const responsive = useResponsive();
   const theme = useTheme();
   const fonts = useFontFamily();
-  const { selectedCar, loading, error, getCarById, calculatePriceWithOffers } =
+  const { selectedCar, loading, error, getCarById, calculateQuickPrice } =
     useCars();
   const { currentLanguage: language } = useLanguageStore();
 
@@ -56,9 +56,7 @@ export default function CarDetailsScreen() {
   // Calculate pricing when rental type or car changes
   useEffect(() => {
     if (selectedCar) {
-      calculatePriceWithOffers(selectedCar.id, 1, selectedRentalType)
-        .then(setPriceCalculation)
-        .catch(console.error);
+      calculateQuickPrice(selectedCar, selectedRentalType);
     }
   }, [selectedCar, selectedRentalType]);
 

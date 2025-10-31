@@ -305,7 +305,7 @@ export const CarCard: React.FC<CarCardProps> = ({
                   : `${car.discount}% OFF`}
               </Badge>
             )}
-            {!car.available && (
+            {car.available && (
               <Badge variant="destructive">{t("featured.unavailable")}</Badge>
             )}
           </View>
@@ -404,7 +404,7 @@ export const CarCard: React.FC<CarCardProps> = ({
           </View>
 
           <TouchableOpacity
-            style={[styles.button, !car.available && styles.buttonDisabled]}
+            style={[styles.button, car.available && styles.buttonDisabled]}
             onPress={handleBookNow}
             disabled={!car.available}
             activeOpacity={0.8}
@@ -412,10 +412,10 @@ export const CarCard: React.FC<CarCardProps> = ({
             <Text
               style={[
                 styles.buttonText,
-                !car.available && styles.buttonTextDisabled,
+                car.available && styles.buttonTextDisabled,
               ]}
             >
-              {car.available ? t("featured.book") : t("featured.unavailable")}
+              {!car.available ? t("featured.book") : t("featured.unavailable")}
             </Text>
           </TouchableOpacity>
         </View>

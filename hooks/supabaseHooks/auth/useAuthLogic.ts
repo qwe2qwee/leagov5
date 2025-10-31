@@ -441,48 +441,52 @@ export const useAuthLogic = () => {
             return { error: message };
           }
 
+          // ✅ إنشاء الـ profile باستخدام RPC الآمن
           if (purpose === "signup" && data.user) {
-            await withRetry(() => createCustomerProfile(data.user as any));
-          }
-
-          if (
-            purpose === "signin" &&
-            !data.session?.access_token &&
-            data.user?.email &&
-            (data.user as any).password
-          ) {
             try {
-              const { data: signInData, error: signInError } =
-                await supabase.auth.signInWithPassword({
-                  email: data.user.email,
-                  password: (data.user as any).password,
-                });
+              await withRetry(() => createCustomerProfile(data.user as any));
 
-              if (!signInError && signInData?.session) {
-                setSession(signInData.session);
-                setUser(signInData.user as any);
-                await supabase.auth.refreshSession().catch(() => {});
-                if (signInData.user) {
-                  fetchProfile(true).catch(() => {
-                    console.warn(
-                      "Silent profile fetch failed after email signin"
-                    );
-                  });
-                }
+              // ✅ التحقق من الدور بعد الإنشاء
+              const { data: roleCheck } = await supabase.rpc(
+                "check_user_is_customer"
+              );
+
+              if (!roleCheck) {
+                console.error("⚠️ User is not a customer after signup");
+                await supabase.auth.signOut();
                 return {
-                  data: {
-                    user: signInData.user,
-                    session: signInData.session,
-                    verified: true,
-                    message: getLocalizedErrorMessage(
-                      "signedInSuccessfully",
-                      lang
-                    ),
-                  },
+                  error:
+                    getLocalizedErrorMessage("unauthorizedAccess", lang) ||
+                    "هذا التطبيق للعملاء فقط",
                 };
               }
-            } catch (e) {
-              console.warn("Email fallback signInWithPassword failed:", e);
+            } catch (profileError) {
+              console.error(
+                "❌ Failed to create customer profile:",
+                profileError
+              );
+              return {
+                error:
+                  getLocalizedErrorMessage("profileCreationFailed", lang) ||
+                  "فشل إنشاء الملف الشخصي",
+              };
+            }
+          }
+
+          // ✅ التحقق من الدور عند تسجيل الدخول
+          if (purpose === "signin" && data.user) {
+            const { data: roleCheck } = await supabase.rpc(
+              "check_user_is_customer"
+            );
+
+            if (!roleCheck) {
+              console.error("⚠️ User is not a customer, denying access");
+              await supabase.auth.signOut();
+              return {
+                error:
+                  getLocalizedErrorMessage("unauthorizedAccess", lang) ||
+                  "هذا التطبيق للعملاء فقط",
+              };
             }
           }
 
@@ -557,6 +561,27 @@ export const useAuthLogic = () => {
 
           setSession(signInData.session);
           setUser(signInData.user as any);
+
+          // ✅ التحقق من الدور
+          try {
+            const { data: roleCheck } = await supabase.rpc(
+              "check_user_is_customer"
+            );
+
+            if (!roleCheck) {
+              console.error("⚠️ User is not a customer, signing out");
+              await supabase.auth.signOut();
+              return {
+                error:
+                  getLocalizedErrorMessage("unauthorizedAccess", lang) ||
+                  "هذا التطبيق للعملاء فقط",
+              };
+            }
+
+            console.log("✅ User verified as customer");
+          } catch (roleError) {
+            console.warn("⚠️ Could not verify user role:", roleError);
+          }
 
           try {
             await supabase.auth.refreshSession();
