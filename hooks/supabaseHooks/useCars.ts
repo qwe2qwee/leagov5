@@ -1,5 +1,5 @@
 // ============================
-// hooks/useCars.ts - Enhanced Version (Final)
+// hooks/useCars.ts - Enhanced Version (Final & Complete)
 // ============================
 
 import { CarWithImages } from "@/types/supabase";
@@ -96,13 +96,109 @@ interface PriceCalculation {
 }
 
 // ============================
+// Helper Function - Transform nearest cars
+// ============================
+
+/**
+ * ✅ دالة تحويل nearestCars لنفس بنية CarWithImages
+ */
+const transformNearestCarToCarWithImages = (
+  nearestCar: NearestCarResult
+): CarWithImages => {
+  const isAvailable = nearestCar.actual_available_quantity > 0;
+
+  return {
+    id: nearestCar.car_id,
+    brand_name_ar: nearestCar.car_brand,
+    brand_name_en: nearestCar.car_brand,
+    model_name_ar: nearestCar.car_model,
+    model_name_en: nearestCar.car_model,
+    color_name_ar: nearestCar.car_color,
+    color_name_en: nearestCar.car_color,
+    daily_price: nearestCar.daily_price,
+    weekly_price: null,
+    monthly_price: null,
+    ownership_price: null,
+    year: new Date().getFullYear(),
+    seats: nearestCar.seats,
+    fuel_type: nearestCar.fuel_type,
+    transmission: nearestCar.transmission,
+    mileage: 0,
+    images: [nearestCar.main_image_url],
+    main_image_url: nearestCar.main_image_url,
+    additional_images: [],
+    is_new: nearestCar.is_new,
+    discount_percentage: nearestCar.discount_percentage,
+    offer_expires_at: null,
+
+    // ✅ الحقل الأهم - التوفر
+    available: isAvailable,
+    actual_available_quantity: nearestCar.actual_available_quantity,
+    quantity: nearestCar.actual_available_quantity,
+    available_quantity: nearestCar.actual_available_quantity,
+
+    status: isAvailable ? "available" : "unavailable",
+
+    specs: {
+      seats: nearestCar.seats,
+      transmission_ar:
+        nearestCar.transmission === "automatic" ? "أوتوماتيك" : "يدوي",
+      transmission_en:
+        nearestCar.transmission === "automatic" ? "Automatic" : "Manual",
+      fuel_type_ar:
+        nearestCar.fuel_type === "gasoline"
+          ? "بنزين"
+          : nearestCar.fuel_type === "diesel"
+          ? "ديزل"
+          : nearestCar.fuel_type === "electric"
+          ? "كهربائي"
+          : nearestCar.fuel_type,
+      fuel_type_en: nearestCar.fuel_type,
+    },
+
+    branch: {
+      id: "",
+      name_ar: nearestCar.branch_name,
+      name_en: nearestCar.branch_name,
+      location_ar: nearestCar.branch_location,
+      location_en: nearestCar.branch_location,
+      latitude: 0,
+      longitude: 0,
+      phone: "",
+      is_active: true,
+    },
+
+    branch_id: "",
+    branch_name_ar: nearestCar.branch_name,
+    branch_name_en: nearestCar.branch_name,
+    branch_location_ar: nearestCar.branch_location,
+    branch_location_en: nearestCar.branch_location,
+
+    distance_km: nearestCar.distance_km,
+    distance_meters: nearestCar.distance_meters,
+
+    rental_types: ["daily"],
+    features_ar: [],
+    features_en: [],
+    feature_ids: [],
+
+    brand_id: "",
+    model_id: "",
+    color_id: "",
+
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  } as any;
+};
+
+// ============================
 // Main Hook
 // ============================
 
 export const useCars = () => {
   // State
   const [cars, setCars] = useState<CarWithImages[]>([]);
-  const [nearestCars, setNearestCars] = useState<NearestCarResult[]>([]);
+  const [nearestCars, setNearestCars] = useState<CarWithImages[]>([]); // ✅ تغيير النوع
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedCar, setSelectedCar] = useState<CarWithImages | null>(null);
@@ -460,14 +556,14 @@ export const useCars = () => {
   );
 
   /**
-   * ✅ محسّن: getNearestCars مع actual_available_quantity
+   * ✅ محسّن: getNearestCars مع تحويل البيانات
    */
   const getNearestCars = useCallback(
     async (
       latitude: number,
       longitude: number,
       limit: number = 3
-    ): Promise<NearestCarResult[]> => {
+    ): Promise<CarWithImages[]> => {
       try {
         setLoading(true);
         setError(null);
@@ -481,8 +577,17 @@ export const useCars = () => {
         if (error) throw error;
 
         const results = (data || []) as NearestCarResult[];
-        setNearestCars(results);
-        return results;
+
+        // ✅ تحويل البيانات لنفس بنية CarWithImages
+        const transformedCars = results.map(transformNearestCarToCarWithImages);
+
+        // ✅ تصفية السيارات المتوفرة فقط
+        const availableCars = transformedCars.filter(
+          (car: any) => car.available
+        );
+
+        setNearestCars(availableCars);
+        return availableCars;
       } catch (err: unknown) {
         const error = err as Error;
         console.error("Error getting nearest cars:", error);
@@ -787,7 +892,7 @@ export const useCars = () => {
   return {
     // Data
     cars,
-    nearestCars,
+    nearestCars, // ✅ الآن نفس النوع CarWithImages[]
     searchResults,
     suggestions,
     selectedCar,
@@ -801,15 +906,15 @@ export const useCars = () => {
     // Pagination state
     currentPage,
     hasReachedEnd,
-    totalCount, // ✅ جديد
-    loadingProgress, // ✅ جديد
+    totalCount,
+    loadingProgress,
 
     // Computed values
     hasSearchResults,
     hasSuggestions,
     hasCars,
     hasMoreCars,
-    statistics, // ✅ جديد
+    statistics,
 
     // Core functions
     fetchCars,
@@ -821,13 +926,13 @@ export const useCars = () => {
 
     // Search functions
     searchCars,
-    getQuickSuggestions, // ✅ بقي كما هو
+    getQuickSuggestions,
     clearSearchResults,
     clearSuggestions,
 
     // Pricing functions
-    calculatePriceWithDates, // ✅ جديد - يستخدم قاعدة البيانات
-    calculateQuickPrice, // ✅ جديد - للعرض السريع
+    calculatePriceWithDates,
+    calculateQuickPrice,
 
     // Utility functions
     resetState,

@@ -1,4 +1,3 @@
-import { icons } from "@/constants";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
@@ -18,7 +17,7 @@ export const CarCard: React.FC<CarCardProps> = ({
   language = "ar",
   cardWidth,
 }) => {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const { currentLanguage } = useLanguageStore();
   const { lock, unlock } = useNavLockStore();
 
@@ -33,7 +32,6 @@ export const CarCard: React.FC<CarCardProps> = ({
     isLargeScreen,
   } = useResponsive();
 
-  // Use the language from store if not provided
   const activeLanguage = language || currentLanguage;
   const { push, replace, back } = useSafeNavigate();
 
@@ -48,43 +46,30 @@ export const CarCard: React.FC<CarCardProps> = ({
     activeLanguage === "ar"
       ? car.specs.transmission_ar
       : car.specs.transmission_en;
-  const getBranchLocation = (car: Car) =>
-    activeLanguage === "ar" ? car.branch.location_ar : car.branch.location_en;
 
   const t = (key: string) => {
     const translations = {
       "featured.new": activeLanguage === "ar" ? "جديد" : "New",
       "featured.unavailable":
         activeLanguage === "ar" ? "غير متاح" : "Unavailable",
-      "featured.book": activeLanguage === "ar" ? "احجز الآن" : "Book Now",
+      "featured.available": activeLanguage === "ar" ? "متاح" : "Available",
+      "featured.book": activeLanguage === "ar" ? "احجز" : "Book",
       "common.sar": activeLanguage === "ar" ? "ر.س" : "SAR",
+      "common.perday": activeLanguage === "ar" ? "يومياً" : "per day",
     };
     return translations[key as keyof typeof translations] || key;
   };
 
-  // Responsive dimensions - MUCH smaller for phones
-  const getCardWidth = () => {
-    if (cardWidth) return cardWidth;
-
-    // Very compact sizing for phones
-    if (isSmallScreen) return width - getSpacing(16); // Much less padding
-    if (isMediumScreen) return width - getSpacing(20);
-    return Math.min(width - getSpacing(24), 320); // Much smaller max width
-  };
-
+  // ✅ أحجام مناسبة للـ Grid Layout
   const getImageHeight = () => {
-    // Much smaller image heights
-    if (isSmallScreen) return 100; // Very compact
-    if (isMediumScreen) return 100;
-    return 140;
+    if (isSmallScreen) return 110;
+    if (isMediumScreen) return 120;
+    return 130;
   };
 
   const handleCardPress = () => {
     try {
-      // Lock navigation to prevent double taps
       lock();
-
-      // Navigate to car details page
       push({
         pathname: "/screens/Car-details",
         params: {
@@ -93,20 +78,16 @@ export const CarCard: React.FC<CarCardProps> = ({
       });
     } catch (error) {
       console.error("[CarCard] Error navigating to car details:", error);
-      // Unlock navigation on error
       unlock();
     }
   };
 
   const handleBookNow = (e: any) => {
-    // Prevent event from bubbling to card press
     e.stopPropagation();
 
     if (car.available) {
       try {
         lock();
-
-        // Navigate to booking page
         push({
           pathname: "/screens/Booking",
           params: {
@@ -125,27 +106,27 @@ export const CarCard: React.FC<CarCardProps> = ({
       ? Math.round(car.price.daily * (1 - (car.discount ?? 0) / 100))
       : car.price.daily;
 
-  // Dynamic spacing based on screen size
-  const dynamicPricingMargin = isSmallScreen
-    ? getSpacing(1)
-    : isMediumScreen
-    ? getSpacing(1)
-    : getSpacing(3);
+  const isAvailable = car.available === true;
+  const isUnavailable = !isAvailable;
 
   const styles = StyleSheet.create({
+    // ✅ Card محسّن للـ Grid - أصغر وأكثر تناسق
     card: {
-      width: getCardWidth() + getSpacing(6),
-      // Fixed height for all cards
-      height: getImageHeight() + getSpacing(145),
+      width: "100%",
       backgroundColor: colors.surface,
-      borderRadius: getSpacing(8),
+      borderRadius: getSpacing(10),
       overflow: "hidden",
-
-      marginBottom: getSpacing(8),
+      opacity: isUnavailable ? 0.7 : 1,
+      shadowColor: colors.text,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      elevation: 3,
     },
     imageContainer: {
       position: "relative",
-      height: getImageHeight() - getSpacing(7),
+      height: getImageHeight(),
+      width: "100%",
     },
     image: {
       width: "100%",
@@ -154,63 +135,37 @@ export const CarCard: React.FC<CarCardProps> = ({
     },
     badgeContainer: {
       position: "absolute",
-      top: getSpacing(4),
-      left: getSpacing(4),
+      top: getSpacing(6),
+      left: activeLanguage === "ar" ? undefined : getSpacing(6),
+      right: activeLanguage === "ar" ? getSpacing(6) : undefined,
       flexDirection: "row",
-      gap: getSpacing(3),
       flexWrap: "wrap",
+      gap: getSpacing(4),
+      maxWidth: "85%",
+      alignItems: activeLanguage === "ar" ? "flex-end" : "flex-start",
     },
     gradientOverlay: {
       position: "absolute",
       bottom: 0,
       left: 0,
       right: 0,
-      height: 20,
+      height: 40,
     },
+    // ✅ Content مضغوط للـ Grid
     content: {
-      flex: 1,
-      padding: getSpacing(8),
-      justifyContent: "space-between",
+      padding: getSpacing(10),
     },
+    // ✅ Car Info مختصر
     carInfo: {
-      marginBottom: getSpacing(4),
-    },
-
-    featuresContainer: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: getSpacing(4),
-    },
-    featureItem: {
-      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
-      alignItems: "center",
-      gap: getSpacing(2),
-    },
-    featureText: {
-      fontSize: getFontSize(9),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-    },
-    locationContainer: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: getSpacing(4),
-      marginBottom: getSpacing(8),
-    },
-
-    pricingContainer: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      flexWrap: "nowrap",
-      marginBottom: dynamicPricingMargin,
+      marginBottom: getSpacing(6),
     },
     carTitle: {
-      fontSize: getFontSize(14),
+      fontSize: getFontSize(13),
       fontFamily: fonts.Bold,
       color: colors.text,
-      marginBottom: getSpacing(1),
+      marginBottom: getSpacing(2),
       textAlign: activeLanguage === "ar" ? "right" : "left",
+      letterSpacing: -0.2,
     },
     carSubtitle: {
       fontSize: getFontSize(10),
@@ -218,205 +173,249 @@ export const CarCard: React.FC<CarCardProps> = ({
       color: colors.textSecondary,
       textAlign: activeLanguage === "ar" ? "right" : "left",
     },
-    locationText: {
+    // ✅ Features - icons فقط بدون نص (لتوفير المساحة)
+    featuresContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: getSpacing(8),
+      marginBottom: getSpacing(8),
+      paddingVertical: getSpacing(6),
+      paddingHorizontal: getSpacing(8),
+      backgroundColor:
+        scheme === "light" ? colors.backgroundSecondary : colors.background,
+      borderRadius: getSpacing(6),
+    },
+    featureItem: {
+      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: getSpacing(3),
+      flex: 1,
+    },
+    featureDivider: {
+      width: 1,
+      height: getFontSize(12),
+      backgroundColor: colors.border,
+    },
+    featureText: {
+      fontSize: getFontSize(9),
+      fontFamily: fonts.Medium,
+      color: colors.text,
+    },
+    // ✅ Pricing مضغوط
+    pricingContainer: {
+      marginBottom: getSpacing(8),
+    },
+    priceRow: {
+      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
+      alignItems: "baseline",
+      gap: getSpacing(3),
+      marginBottom: getSpacing(1),
+    },
+    currentPrice: {
+      fontSize: getFontSize(17),
+      fontFamily: fonts.Bold,
+      color: colors.primary,
+      letterSpacing: -0.3,
+    },
+    currency: {
+      fontSize: getFontSize(11),
+      fontFamily: fonts.SemiBold,
+      color: colors.primary,
+    },
+    perDayText: {
       fontSize: getFontSize(9),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
-      flexShrink: 1,
       textAlign: activeLanguage === "ar" ? "right" : "left",
     },
-
-    priceContainer: {
-      flexShrink: 1,
-      marginRight: getSpacing(8),
-    },
-    currentPrice: {
-      fontSize: getFontSize(16),
-      fontFamily: fonts.Bold,
-      color: colors.primary,
-      flexShrink: 1,
+    // ✅ Original Price مختصر
+    originalPriceRow: {
+      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: getSpacing(2),
+      marginTop: getSpacing(1),
     },
     originalPrice: {
       fontSize: getFontSize(10),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
       textDecorationLine: "line-through",
-      flexShrink: 1,
     },
-    perDayText: {
+    discountBadge: {
       fontSize: getFontSize(8),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-      textAlign: activeLanguage === "ar" ? "right" : "left",
+      fontFamily: fonts.Bold,
+      color: colors.success,
+      paddingHorizontal: getSpacing(3),
+      paddingVertical: getSpacing(1),
+      backgroundColor: colors.success + "15",
+      borderRadius: getSpacing(3),
     },
-    availabilityContainer: {
-      flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
-      alignItems: "center",
-      flexShrink: 0,
-      gap: getSpacing(4),
-    },
-    availabilityText: {
-      fontSize: getFontSize(8),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-      flexShrink: 1,
-    },
+    // ✅ Button مدمج - full width
     button: {
       backgroundColor: colors.primary,
       paddingVertical: getSpacing(8),
       borderRadius: getSpacing(6),
       alignItems: "center",
-      marginTop: "auto",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: getSpacing(4),
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 3,
+      elevation: 2,
     },
     buttonDisabled: {
       backgroundColor: colors.borderDark,
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    buttonContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: getSpacing(3),
     },
     buttonText: {
-      fontSize: getFontSize(12),
-      fontFamily: fonts.SemiBold,
+      fontSize: getFontSize(11),
+      fontFamily: fonts.Bold,
       color: colors.textInverse,
     },
     buttonTextDisabled: {
       color: colors.textSecondary,
     },
+    // ✅ Status indicator صغير
+    statusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: isAvailable ? colors.success : colors.error,
+    },
   });
+
+  const savedAmount = car.price.daily - discountedPrice;
 
   return (
     <Card style={styles.card}>
       <TouchableOpacity
-        style={styles.card}
+        style={{ flex: 1 }}
         onPress={handleCardPress}
-        activeOpacity={0.9}
+        activeOpacity={0.95}
+        disabled={isUnavailable}
       >
+        {/* ✅ Image Container */}
         <View style={styles.imageContainer}>
           <Image source={{ uri: car.images[0] }} style={styles.image} />
 
           <LinearGradient
-            colors={["transparent", "rgba(0,0,0,0.3)"]}
+            colors={["transparent", "rgba(0,0,0,0.35)"]}
             style={styles.gradientOverlay}
           />
 
+          {/* ✅ Badges مختصرة */}
           <View style={styles.badgeContainer}>
             {car.isNew && <Badge variant="default">{t("featured.new")}</Badge>}
+
             {(car.discount ?? 0) > 0 && (
               <Badge variant="secondary">
                 {activeLanguage === "ar"
-                  ? `خصم ${car.discount}%`
-                  : `${car.discount}% OFF`}
+                  ? `-${car.discount}%`
+                  : `-${car.discount}%`}
               </Badge>
             )}
-            {car.available && (
+
+            {isUnavailable && (
               <Badge variant="destructive">{t("featured.unavailable")}</Badge>
             )}
           </View>
         </View>
 
+        {/* ✅ Content مضغوط */}
         <View style={styles.content}>
-          <View>
-            <View style={styles.carInfo}>
-              <Text
-                style={styles.carTitle}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {getBrand(car)} {getModel(car)}
-              </Text>
+          {/* Car Info */}
+          <View style={styles.carInfo}>
+            <Text
+              style={styles.carTitle}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {getBrand(car)} {getModel(car)}
+            </Text>
 
-              <Text
-                style={styles.carSubtitle}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {car.year} • {getColor(car)}
-              </Text>
+            <Text
+              style={styles.carSubtitle}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {car.year} • {getColor(car)}
+            </Text>
+          </View>
+
+          {/* ✅ Features مختصرة */}
+          <View style={styles.featuresContainer}>
+            <View style={styles.featureItem}>
+              <Ionicons
+                name="people-outline"
+                size={getFontSize(13)}
+                color={colors.primary}
+              />
+              <Text style={styles.featureText}>{car.specs.seats}</Text>
             </View>
 
-            <View style={styles.featuresContainer}>
-              <View style={styles.featureItem}>
-                <Ionicons
-                  name="people-outline"
-                  size={getFontSize(14)}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.featureText}>
-                  {car.specs.seats}{" "}
-                  {activeLanguage === "ar" ? "مقاعد" : "seats"}
-                </Text>
-              </View>
-              <View style={styles.featureItem}>
-                <Ionicons
-                  name="flash-outline"
-                  size={getFontSize(14)}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.featureText}>{getTransmission(car)}</Text>
-              </View>
-            </View>
+            <View style={styles.featureDivider} />
 
-            <View style={styles.pricingContainer}>
-              <View style={styles.priceContainer}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={styles.currentPrice}>{discountedPrice}</Text>
-                  <Image
-                    source={icons.riyalsymbol}
-                    resizeMode="contain"
-                    style={{
-                      width: getFontSize(12),
-                      height: getFontSize(12),
-                      marginLeft: getFontSize(2),
-                      tintColor: colors.primary,
-                    }}
-                  />
-                </View>
-
-                {(car.discount ?? 0) > 0 && (
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <Text style={styles.originalPrice}>{car.price.daily}</Text>
-                    <Image
-                      source={icons.riyalsymbol}
-                      resizeMode="contain"
-                      style={{
-                        width: getFontSize(10),
-                        height: getFontSize(10),
-                        marginLeft: getFontSize(2),
-                        tintColor: colors.textSecondary,
-                      }}
-                    />
-                  </View>
-                )}
-
-                <Text style={styles.perDayText}>
-                  {activeLanguage === "ar" ? "في اليوم" : "per day"}
-                </Text>
-              </View>
-
-              <View style={styles.availabilityContainer}>
-                <Ionicons
-                  name="time-outline"
-                  size={getFontSize(12)}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.availabilityText}>
-                  {activeLanguage === "ar" ? "متاح الآن" : "Available now"}
-                </Text>
-              </View>
+            <View style={styles.featureItem}>
+              <Ionicons
+                name="flash-outline"
+                size={getFontSize(13)}
+                color={colors.primary}
+              />
+              <Text style={styles.featureText} numberOfLines={1}>
+                {activeLanguage === "ar" ? "أوتو" : "Auto"}
+              </Text>
             </View>
           </View>
 
+          {/* ✅ Pricing مختصر */}
+          <View style={styles.pricingContainer}>
+            <View style={styles.priceRow}>
+              <Text style={styles.currentPrice}>{discountedPrice}</Text>
+              <Text style={styles.currency}>{t("common.sar")}</Text>
+            </View>
+
+            <Text style={styles.perDayText}>{t("common.perday")}</Text>
+
+            {(car.discount ?? 0) > 0 && (
+              <View style={styles.originalPriceRow}>
+                <Text style={styles.originalPrice}>
+                  {car.price.daily} {t("common.sar")}
+                </Text>
+                <Text style={styles.discountBadge}>
+                  {activeLanguage === "ar"
+                    ? `وفّر ${savedAmount}`
+                    : `Save ${savedAmount}`}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ✅ Button مع status indicator */}
           <TouchableOpacity
-            style={[styles.button, car.available && styles.buttonDisabled]}
+            style={[styles.button, isUnavailable && styles.buttonDisabled]}
             onPress={handleBookNow}
-            disabled={!car.available}
+            disabled={isUnavailable}
             activeOpacity={0.8}
           >
-            <Text
-              style={[
-                styles.buttonText,
-                car.available && styles.buttonTextDisabled,
-              ]}
-            >
-              {!car.available ? t("featured.book") : t("featured.unavailable")}
-            </Text>
+            <View style={styles.buttonContent}>
+              <View style={styles.statusDot} />
+              <Text
+                style={[
+                  styles.buttonText,
+                  isUnavailable && styles.buttonTextDisabled,
+                ]}
+              >
+                {isAvailable ? t("featured.book") : t("featured.unavailable")}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>

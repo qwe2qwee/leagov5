@@ -102,10 +102,7 @@ export default function HomeScreen() {
       const newScale = 1 - progress * 0.15;
       const newOpacity = 1 - progress * 0.5;
 
-      // Scale ما ينزل أقل من 0.85
       announcementScale.setValue(Math.max(newScale, 0.85));
-
-      // Opacity بين 0.7 و 1 فقط
       announcementOpacity.setValue(Math.min(Math.max(newOpacity, 0.7), 1));
     },
     [scrollY, announcementScale, announcementOpacity]
@@ -156,10 +153,12 @@ export default function HomeScreen() {
     });
   }, [announcements]);
 
+  // ✅ التعديل: الآن nearestCars و cars لهما نفس البنية
   const allCarsData = useMemo(() => {
     if (nearestCars.length === 0) return cars;
 
-    const nearestCarIds = new Set(nearestCars.map((car) => car.car_id));
+    // ✅ استخدام id بدلاً من car_id (لأن nearestCars الآن CarWithImages[])
+    const nearestCarIds = new Set(nearestCars.map((car) => car.id));
     const filteredRegularCars = cars.filter(
       (car) => !nearestCarIds.has(car.id)
     );
@@ -235,7 +234,7 @@ export default function HomeScreen() {
         },
         singleCarContainer: {
           width: cardWidth,
-          marginRight: cardWidth + cardGap, // Push single car to left
+          marginRight: cardWidth + cardGap,
         },
         loadMoreContainer: {
           paddingVertical: spacing.xl,
@@ -449,16 +448,14 @@ export default function HomeScreen() {
     );
   }, [allCarsData.length, styles, colors, currentLanguage]);
 
-  // ✅ التعديل الرئيسي: طلب الموقع بشكل صامت مع fallback
   useEffect(() => {
     getCurrentLocation({
-      fallbackToDefault: true, // استخدام موقع افتراضي عند الفشل
-      defaultCity: "jeddah", // جدة كموقع افتراضي
-      enableHighAccuracy: false, // دقة متوسطة (أسرع وأقل استهلاك للبطارية)
-      timeout: 5000, // انتظار 5 ثواني فقط
-      maxAge: 60 * 60 * 1000, // استخدام موقع محفوظ لمدة ساعة
+      fallbackToDefault: true,
+      defaultCity: "jeddah",
+      enableHighAccuracy: false,
+      timeout: 5000,
+      maxAge: 60 * 60 * 1000,
     }).catch((error) => {
-      // تجاهل الأخطاء - الموقع الافتراضي سيُستخدم تلقائياً
       console.log("Using default location:", error.message);
     });
   }, [getCurrentLocation]);
