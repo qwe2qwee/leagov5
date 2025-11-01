@@ -1,7 +1,6 @@
-// components/Bookings/BookingCard.tsx - UPDATED WITH TIMER
+// components/Bookings/BookingCard.tsx - REBUILT FROM SCRATCH
 import { Badge } from "@/components/ui/Badge2";
 import { Card } from "@/components/ui/Card";
-import CustomButton from "@/components/ui/CustomButton";
 import { icons } from "@/constants";
 import { useBookingTimer } from "@/hooks/booking/useUserBookings";
 import { useFontFamily } from "@/hooks/useFontFamily";
@@ -14,12 +13,16 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { Booking } from "./types";
 import { STATUS_CONFIG } from "./types";
 
+// ═══════════════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════════════
+
 interface BookingCardProps {
   booking: Booking;
   onPress: () => void;
   onCancel?: () => void;
   onPay?: () => void;
-  showTimer?: boolean; // جديد
+  showTimer?: boolean;
   isCancelling?: boolean;
   translations: {
     from: string;
@@ -27,10 +30,14 @@ interface BookingCardProps {
     sar: string;
     cancel: string;
     payNow: string;
-    viewDetails: string; // جديد
-    statusMessage?: string; // جديد
+    viewDetails: string;
+    statusMessage?: string;
   };
 }
+
+// ═══════════════════════════════════════════════════════════
+// Main Component
+// ═══════════════════════════════════════════════════════════
 
 export const BookingCard: React.FC<BookingCardProps> = ({
   booking,
@@ -41,301 +48,355 @@ export const BookingCard: React.FC<BookingCardProps> = ({
   isCancelling,
   translations: t,
 }) => {
+  // ═══════════════════════════════════════════════════════════
+  // Hooks
+  // ═══════════════════════════════════════════════════════════
+
   const { colors } = useTheme();
-  const responsive = useResponsive();
   const fonts = useFontFamily();
   const { isRTL, currentLanguage } = useLanguageStore();
+  const { spacing, getFontSize, getBorderRadius } = useResponsive();
 
-  // العداد التنازلي
+  // Timer Hook
   const { formattedTime, isExpired, hoursLeft, minutesLeft } = useBookingTimer(
     showTimer ? booking.expires_at : null
   );
 
-  const statusConfig = STATUS_CONFIG[booking.status];
-  const carName = `${
-    isRTL ? booking.car?.model?.name_ar : booking.car?.model?.brand?.name_en
-  } ${
-    isRTL ? booking.car?.model?.brand?.name_ar : booking.car?.model?.name_en
-  }`;
-  const imageUrl = booking.car?.model?.default_image_url;
+  // ═══════════════════════════════════════════════════════════
+  // Computed Values
+  // ═══════════════════════════════════════════════════════════
 
-  // تحديد لون العداد حسب الوقت المتبقي
-  const getTimerColor = () => {
-    if (isExpired) return colors.error;
-    if (hoursLeft === 0 && minutesLeft < 10) return colors.error;
-    if (hoursLeft < 2) return colors.warning;
-    return colors.success;
-  };
+  const statusConfig = STATUS_CONFIG[booking.status];
+
+  // Car Information
+  const carInfo = useMemo(() => {
+    const brand = isRTL
+      ? booking.car?.model?.brand?.name_ar
+      : booking.car?.model?.brand?.name_en;
+    const model = isRTL
+      ? booking.car?.model?.name_ar
+      : booking.car?.model?.name_en;
+
+    return {
+      name: `${brand || ""} ${model || ""}`.trim(),
+      image: booking.car?.model?.default_image_url,
+    };
+  }, [booking.car, isRTL]);
+
+  // Date Information (Compact Format)
+  const dateInfo = useMemo(() => {
+    const formatDate = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+      });
+    };
+
+    return {
+      start: formatDate(booking.start_date),
+      end: formatDate(booking.end_date),
+      days: booking.total_days,
+    };
+  }, [booking.start_date, booking.end_date, booking.total_days, isRTL]);
+
+  // Timer Status (Colors & Urgency)
+  const timerStatus = useMemo(() => {
+    if (isExpired) return { color: colors.error, isUrgent: true };
+    if (hoursLeft === 0 && minutesLeft < 10)
+      return { color: colors.error, isUrgent: true };
+    if (hoursLeft < 2) return { color: colors.warning, isUrgent: false };
+    return { color: colors.success, isUrgent: false };
+  }, [isExpired, hoursLeft, minutesLeft, colors]);
+
+  // Show Status Badge on Image (only for inactive states)
+  const showBadgeOnImage =
+    booking.status === "expired" || booking.status === "cancelled";
+
+  // ═══════════════════════════════════════════════════════════
+  // Styles
+  // ═══════════════════════════════════════════════════════════
 
   const styles = useMemo(
     () =>
       StyleSheet.create({
+        // Card Wrapper
         cardWrapper: {
-          marginBottom: responsive.spacing.md,
+          marginBottom: spacing.md,
         },
-        mainRow: {
+
+        // Override Card.Content default padding
+        cardContentOverride: {
+          paddingHorizontal: 0,
+          paddingBottom: 0,
+        },
+
+        // Main Container (with custom padding)
+        container: {
+          padding: spacing.md,
+        },
+
+        // Layout: Horizontal (Image + Content)
+        row: {
           flexDirection: isRTL ? "row-reverse" : "row",
-          gap: responsive.spacing.md,
-          justifyContent: "center",
-          alignItems: "center",
+          gap: spacing.md,
         },
-        imageSection: {
-          width: responsive.getResponsiveValue(100, 110, 120, 130, 140),
-          height: responsive.getResponsiveValue(100, 110, 120, 130, 140),
-          borderRadius: responsive.getBorderRadius("medium"),
+
+        // ═══ Image Section ═══
+        imageWrapper: {
+          width: 90,
+          height: 90,
+          borderRadius: getBorderRadius("medium"),
           overflow: "hidden",
           backgroundColor: colors.backgroundSecondary,
-          borderWidth: 1,
-          borderColor: colors.border,
-          flexShrink: 0,
+          position: "relative",
         },
-        carImage: {
+        image: {
           width: "100%",
           height: "100%",
+          resizeMode: "cover",
         },
-        contentSection: {
+        badgeOnImage: {
+          position: "absolute",
+          bottom: spacing.xs - 2,
+          [isRTL ? "right" : "left"]: spacing.xs - 2,
+          transform: [{ scale: 0.85 }], // Make badge smaller
+        },
+        badgeInline: {
+          transform: [{ scale: 0.85 }], // Make badge smaller
+        },
+        actionsRow: {
+          flexDirection: isRTL ? "row-reverse" : "row",
+          gap: spacing.xs,
+          flexShrink: 0,
+        },
+        buttonWrapper: {
+          flex: 1, // Equal width for both buttons
+          maxWidth: 80, // Max 120px per button
+        },
+        buttonText: {
+          fontSize: getFontSize(5), // Smaller text (11px)
+          fontFamily: fonts.Medium,
+        },
+
+        // ═══ Content Section ═══
+        content: {
           flex: 1,
           justifyContent: "space-between",
           minWidth: 0,
         },
-        nameRow: {
-          marginBottom: responsive.spacing.xs,
+
+        // Top Section
+        topSection: {
+          gap: spacing.xs - 2,
         },
-        carNameText: {
-          fontSize: responsive.getFontSize(17, 16, 19),
-          fontFamily: fonts.Bold || fonts.SemiBold,
+
+        // Car Name Row
+        carNameRow: {
+          flexDirection: isRTL ? "row-reverse" : "row",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: spacing.xs,
+          marginBottom: spacing.xs - 4,
+        },
+        carName: {
+          flex: 1,
+          fontSize: getFontSize(15),
+          fontFamily: fonts.Bold,
           color: colors.text,
-          lineHeight: Math.round(responsive.getFontSize(17, 16, 19) * 1.35),
           textAlign: isRTL ? "right" : "left",
+          letterSpacing: -0.2,
         },
-        statusRow: {
-          marginBottom: responsive.spacing.xs,
-          alignItems: isRTL ? "flex-end" : "flex-start",
-        },
-        // رسالة الحالة
-        statusMessageContainer: {
-          marginTop: responsive.spacing.xs,
-          marginBottom: responsive.spacing.xs,
-        },
-        statusMessageText: {
-          fontSize: responsive.getFontSize(12, 11, 13),
-          fontFamily: fonts.Regular,
-          color: colors.textSecondary,
-          textAlign: isRTL ? "right" : "left",
-          lineHeight: Math.round(responsive.getFontSize(12, 11, 13) * 1.4),
-        },
-        // العداد التنازلي
-        timerContainer: {
+
+        // Date Row
+        dateRow: {
           flexDirection: isRTL ? "row-reverse" : "row",
           alignItems: "center",
-          backgroundColor: colors.backgroundSecondary,
-          paddingHorizontal: responsive.spacing.sm,
-          paddingVertical: responsive.spacing.xs,
-          borderRadius: responsive.getBorderRadius("small"),
-          gap: responsive.spacing.xs,
-          marginBottom: responsive.spacing.sm,
-          borderWidth: 1,
-          borderColor: getTimerColor(),
+          gap: spacing.xs - 2,
+          marginBottom: spacing.xs - 2,
         },
-        timerIcon: {
-          marginRight: isRTL ? 0 : responsive.spacing.xxl,
-          marginLeft: isRTL ? responsive.spacing.xxl : 0,
+        dateText: {
+          fontSize: getFontSize(11),
+          fontFamily: fonts.Regular,
+          color: colors.textSecondary,
+        },
+        dateArrow: {
+          marginHorizontal: 2,
+        },
+        dateDivider: {
+          width: 3,
+          height: 3,
+          borderRadius: 1.5,
+          backgroundColor: colors.textSecondary,
+        },
+        daysText: {
+          fontSize: getFontSize(11),
+          fontFamily: fonts.SemiBold,
+          color: colors.primary,
+        },
+
+        // Timer Row
+        timerRow: {
+          flexDirection: isRTL ? "row-reverse" : "row",
+          alignItems: "center",
+          gap: spacing.xs - 2,
+          backgroundColor: timerStatus.color + "15",
+          paddingVertical: spacing.xs - 2,
+          paddingHorizontal: spacing.xs,
+          borderRadius: getBorderRadius("small"),
+          borderLeftWidth: isRTL ? 0 : 3,
+          borderRightWidth: isRTL ? 3 : 0,
+          borderColor: timerStatus.color,
+          marginTop: spacing.xs - 4,
         },
         timerText: {
-          fontSize: responsive.getFontSize(13, 12, 14),
-          fontFamily: fonts.SemiBold,
-          color: getTimerColor(),
+          fontSize: getFontSize(11),
+          fontFamily: fonts.Bold,
+          color: timerStatus.color,
+          letterSpacing: 0.5,
         },
-        timerLabel: {
-          fontSize: responsive.getFontSize(11, 10, 12),
-          fontFamily: fonts.Regular,
-          color: colors.textSecondary,
-        },
-        dateInfoRow: {
-          flexDirection: isRTL ? "row-reverse" : "row",
-          alignItems: "center",
-          gap: responsive.spacing.xs,
-          marginBottom: responsive.spacing.md,
-        },
-        dateInfoText: {
-          fontSize: responsive.getFontSize(14, 13, 16),
-          fontFamily: fonts.Regular,
-          color: colors.textSecondary,
-          lineHeight: Math.round(responsive.getFontSize(14, 13, 16) * 1.3),
-          flex: 1,
-          textAlign: isRTL ? "right" : "left",
-        },
-        actionRow: {
+
+        // Bottom Section
+        bottomSection: {
           flexDirection: isRTL ? "row-reverse" : "row",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: responsive.spacing.sm,
-          marginTop: responsive.spacing.xs,
+          gap: spacing.sm,
+          marginTop: spacing.xs,
+        },
+
+        // Price
+        priceRow: {
+          flexDirection: isRTL ? "row-reverse" : "row",
+          alignItems: "center",
+          gap: spacing.xs - 2,
         },
         priceText: {
-          fontSize: responsive.getFontSize(20, 19, 23),
-          fontFamily: fonts.Bold || fonts.SemiBold,
+          fontSize: getFontSize(18),
+          fontFamily: fonts.Bold,
           color: colors.primary,
+          letterSpacing: -0.3,
         },
-        actionsContainer: {
-          flexDirection: isRTL ? "row-reverse" : "row",
-          gap: responsive.spacing.xs,
-          flexShrink: 0,
+        riyalIcon: {
+          width: getFontSize(12),
+          height: getFontSize(12),
+          tintColor: colors.primary,
         },
       }),
-    [colors, responsive, fonts, isRTL, hoursLeft, minutesLeft, isExpired]
+    [colors, spacing, fonts, isRTL, timerStatus, getFontSize, getBorderRadius]
   );
+
+  // ═══════════════════════════════════════════════════════════
+  // Render
+  // ═══════════════════════════════════════════════════════════
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.85}
       style={styles.cardWrapper}
     >
       <Card>
-        <Card.Content
-          style={{
-            paddingTop: responsive.spacing.sm,
-          }}
-        >
-          <View style={styles.mainRow}>
-            {/* LEFT: Car Image */}
-            <View style={styles.imageSection}>
-              <Image
-                source={{
-                  uri: imageUrl || "https://via.placeholder.com/150",
-                }}
-                style={styles.carImage}
-                resizeMode="cover"
-              />
-            </View>
+        <Card.Content style={styles.cardContentOverride}>
+          <View style={styles.container}>
+            <View style={styles.row}>
+              {/* ═══════════════════════════════════════════════════════════
+                  IMAGE SECTION
+              ═══════════════════════════════════════════════════════════ */}
+              <View style={styles.imageWrapper}>
+                <Image
+                  source={{
+                    uri: carInfo.image || "https://via.placeholder.com/90",
+                  }}
+                  style={styles.image}
+                />
 
-            {/* RIGHT: Content Stack */}
-            <View style={styles.contentSection}>
-              {/* Car Name */}
-              <View style={styles.nameRow}>
-                <Text style={styles.carNameText} numberOfLines={2}>
-                  {carName}
-                </Text>
+                {/* Badge on Image (for expired/cancelled only) */}
+                {showBadgeOnImage && (
+                  <View style={styles.badgeOnImage}>
+                    <Badge variant={statusConfig.variant} size="sm">
+                      {statusConfig.label[currentLanguage]}
+                    </Badge>
+                  </View>
+                )}
               </View>
 
-              {/* Status Badge */}
-              <View style={styles.statusRow}>
-                <Badge variant={statusConfig.variant} size="sm">
-                  {statusConfig.label[currentLanguage]}
-                </Badge>
-              </View>
-
-              {/* Status Message */}
-              {t.statusMessage && (
-                <View style={styles.statusMessageContainer}>
-                  <Text style={styles.statusMessageText} numberOfLines={2}>
-                    {t.statusMessage}
-                  </Text>
-                </View>
-              )}
-
-              {/* Timer (for confirmed and payment_pending) */}
-              {showTimer && formattedTime && !isExpired && (
-                <View style={styles.timerContainer}>
-                  <Ionicons
-                    name={hoursLeft < 1 ? "alarm-outline" : "time-outline"}
-                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                    color={getTimerColor()}
-                    style={styles.timerIcon}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.timerText}>
-                      {isRTL ? "باقي" : "Remaining"} {formattedTime}
+              {/* ═══════════════════════════════════════════════════════════
+                  CONTENT SECTION
+              ═══════════════════════════════════════════════════════════ */}
+              <View style={styles.content}>
+                {/* Top Section */}
+                <View style={styles.topSection}>
+                  {/* Car Name + Status Badge */}
+                  <View style={styles.carNameRow}>
+                    <Text style={styles.carName} numberOfLines={1}>
+                      {carInfo.name || t.viewDetails}
                     </Text>
-                    <Text style={styles.timerLabel}>
-                      {booking.status === "confirmed"
-                        ? isRTL
-                          ? "لإتمام الدفع"
-                          : "to complete payment"
-                        : isRTL
-                        ? "لإتمام عملية الدفع"
-                        : "to finish payment process"}
+
+                    {/* Status Badge (inline for active states) */}
+                    {!showBadgeOnImage && (
+                      <View style={styles.badgeInline}>
+                        <Badge variant={statusConfig.variant}>
+                          {statusConfig.label[currentLanguage]}
+                        </Badge>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Date + Duration Row */}
+                  <View style={styles.dateRow}>
+                    <Text style={styles.dateText}>{dateInfo.start}</Text>
+                    <Ionicons
+                      name={isRTL ? "arrow-back" : "arrow-forward"}
+                      size={10}
+                      color={colors.textSecondary}
+                      style={styles.dateArrow}
+                    />
+                    <Text style={styles.dateText}>{dateInfo.end}</Text>
+                    <View style={styles.dateDivider} />
+                    <Text style={styles.daysText}>
+                      {dateInfo.days} {isRTL ? "يوم" : "d"}
                     </Text>
                   </View>
-                </View>
-              )}
 
-              {/* Expired Warning */}
-              {showTimer && isExpired && (
-                <View
-                  style={[
-                    styles.timerContainer,
-                    {
-                      borderColor: colors.error,
-                      backgroundColor: colors.backgroundSecondary,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="alert-circle-outline"
-                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                    color={colors.error}
-                    style={styles.timerIcon}
-                  />
-                  <Text style={[styles.timerText, { color: colors.error }]}>
-                    {isRTL ? "انتهت المهلة" : "Time Expired"}
-                  </Text>
-                </View>
-              )}
-
-              {/* Price + Action Buttons */}
-              <View style={styles.actionRow}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text style={styles.priceText}>{booking.final_amount}</Text>
-                  <Image
-                    source={icons.riyalsymbol}
-                    resizeMode="contain"
-                    style={{
-                      width: responsive.getFontSize(12),
-                      height: responsive.getFontSize(12),
-                      marginLeft: responsive.getFontSize(2),
-                      tintColor: colors.primary,
-                    }}
-                  />
-                </View>
-
-                <View style={styles.actionsContainer}>
-                  {/* زر الإلغاء - للحالات: pending, confirmed, payment_pending */}
-                  {onCancel && (
-                    <CustomButton
-                      bgVariant="outline"
-                      onPress={onCancel}
-                      loading={isCancelling}
-                      disabled={isCancelling}
-                      style={{
-                        paddingHorizontal: responsive.spacing.sm,
-                        paddingVertical: responsive.spacing.xs,
-                      }}
-                    >
-                      {t.cancel}
-                    </CustomButton>
+                  {/* Timer (if applicable and not expired) */}
+                  {showTimer && formattedTime && !isExpired && (
+                    <View style={styles.timerRow}>
+                      <Ionicons
+                        name={timerStatus.isUrgent ? "alarm" : "time"}
+                        size={14}
+                        color={timerStatus.color}
+                      />
+                      <Text style={styles.timerText}>{formattedTime}</Text>
+                    </View>
                   )}
 
-                  {/* زر الدفع - للحالات: confirmed, payment_pending */}
-                  {onPay && (
-                    <CustomButton
-                      bgVariant="primary"
-                      onPress={onPay}
-                      style={{
-                        paddingHorizontal: responsive.spacing.md,
-                        paddingVertical: responsive.spacing.xs,
-                      }}
-                    >
-                      {t.payNow}
-                    </CustomButton>
+                  {/* Expired Warning */}
+                  {showTimer && isExpired && (
+                    <View style={styles.timerRow}>
+                      <Ionicons
+                        name="alert-circle"
+                        size={14}
+                        color={colors.error}
+                      />
+                      <Text style={[styles.timerText, { color: colors.error }]}>
+                        {isRTL ? "منتهي" : "Expired"}
+                      </Text>
+                    </View>
                   )}
+                </View>
+
+                {/* Bottom Section - Price + Actions */}
+                <View style={styles.bottomSection}>
+                  {/* Price */}
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceText}>{booking.final_amount}</Text>
+                    <Image
+                      source={icons.riyalsymbol}
+                      resizeMode="contain"
+                      style={styles.riyalIcon}
+                    />
+                  </View>
                 </View>
               </View>
             </View>
@@ -345,3 +406,9 @@ export const BookingCard: React.FC<BookingCardProps> = ({
     </TouchableOpacity>
   );
 };
+
+// ═══════════════════════════════════════════════════════════
+// Export
+// ═══════════════════════════════════════════════════════════
+
+export default BookingCard;

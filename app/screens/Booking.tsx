@@ -730,6 +730,7 @@ const BookingScreen: React.FC = () => {
         {/* Car Info */}
         <BookingCarInfo
           car={{
+            car_id: car.car_id,
             brand_name_ar: car.brand.name_ar,
             brand_name_en: car.brand.name_en,
             model_name_ar: car.model.name_ar,
@@ -884,7 +885,7 @@ const BookingScreen: React.FC = () => {
                 isCheckingAvailability
               }
               onSubmit={handleSubmit}
-              userProfile={eligibility?.user_profile}
+              userProfile={eligibility?.user_profile || null}
               totalPrice={pricePreview?.final_price || 0}
               texts={{
                 processing: isCreatingBooking ? t.processing : t.confirmBooking,

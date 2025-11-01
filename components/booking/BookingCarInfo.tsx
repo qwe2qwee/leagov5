@@ -18,6 +18,9 @@ interface CarData {
   main_image_url: string;
   color_name_ar: string;
   color_name_en: string;
+  fuel_type: string;
+  transmission: string;
+
   daily_price: number;
   seats: number;
   branch_name_ar: string;
@@ -31,6 +34,7 @@ interface BookingCarInfoProps {
   cardTitle: string;
   newLabel: string;
   seatsLabel: string;
+
   riyalLabel: string;
 }
 

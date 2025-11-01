@@ -62,6 +62,7 @@ export interface PricePreview {
   final_price: number;
   price_per_unit: number;
   offer_valid: boolean;
+  total_amount: number;
   offer_expires_at?: string;
 }
 
