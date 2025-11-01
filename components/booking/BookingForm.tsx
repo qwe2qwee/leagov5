@@ -36,9 +36,9 @@ interface BookingFormProps {
     selectWeeks: string;
     selectMonths: string;
     tapToSelectDate: string;
-    totalPrice: string; // نص لعرض السعر النهائي
+    totalPrice: string;
   };
-  prices: Prices; // أسعار السيارة
+  prices: Prices;
 }
 
 export default function BookingForm({
@@ -87,6 +87,49 @@ export default function BookingForm({
     }
     return [];
   }, [formData.rentalType, currentLanguage]);
+
+  // ⬅️ جديد: Map للحصول على label من value
+  const rentalTypeLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    availableRentalTypes.forEach((type) => {
+      map[type.value] = type.label;
+    });
+    return map;
+  }, [availableRentalTypes]);
+
+  // ⬅️ جديد: Map للحصول على duration label من value
+  const durationLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    getDurationOptions().forEach((option) => {
+      map[option.value] = option.label;
+    });
+    return map;
+  }, [getDurationOptions]);
+
+  // ⬅️ جديد: دالة للحصول على نص Rental Type
+  const getRentalTypeLabel = useCallback(() => {
+    if (!formData.rentalType) return texts.selectRentalType;
+    return rentalTypeLabels[formData.rentalType] || formData.rentalType;
+  }, [formData.rentalType, rentalTypeLabels, texts.selectRentalType]);
+
+  // ⬅️ جديد: دالة للحصول على نص Duration
+  const getDurationLabel = useCallback(() => {
+    const durationStr = formData.duration.toString();
+    if (!durationStr) {
+      return formData.rentalType === "weekly"
+        ? texts.selectWeeks
+        : formData.rentalType === "monthly"
+        ? texts.selectMonths
+        : "اختر الأيام";
+    }
+    return durationLabels[durationStr] || durationStr;
+  }, [
+    formData.duration,
+    formData.rentalType,
+    durationLabels,
+    texts.selectWeeks,
+    texts.selectMonths,
+  ]);
 
   // Format selected date for display
   const formatDisplayDate = useCallback(
@@ -178,6 +221,14 @@ export default function BookingForm({
       color: colors.primary,
       textAlign: isRTL ? "right" : "left",
     },
+    // ⬅️ جديد: Style للـ custom trigger text
+    triggerText: {
+      fontSize: responsive.getFontSize(15, 14, 17),
+      fontFamily: fonts.Regular,
+      flex: 1,
+      textAlign: "right",
+      lineHeight: Math.round(responsive.getFontSize(15, 14, 17) * 1.3),
+    },
   });
 
   return (
@@ -191,7 +242,23 @@ export default function BookingForm({
             onFormDataChange({ rentalType: value as RentalType, duration: 1 })
           }
         >
-          <Select.Trigger placeholder={texts.selectRentalType} />
+          {/* ⬅️ Custom Trigger مع النص الصحيح */}
+          <Select.Trigger>
+            <Text
+              style={[
+                styles.triggerText,
+                {
+                  color: formData.rentalType
+                    ? colors.text
+                    : colors.textSecondary,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {getRentalTypeLabel()}
+            </Text>
+          </Select.Trigger>
+
           <Select.Content>
             {availableRentalTypes.map((type) => (
               <Select.Item key={type.value} value={type.value}>
@@ -211,15 +278,21 @@ export default function BookingForm({
             onFormDataChange({ duration: parseInt(value) })
           }
         >
-          <Select.Trigger
-            placeholder={
-              formData.rentalType === "weekly"
-                ? texts.selectWeeks
-                : formData.rentalType === "monthly"
-                ? texts.selectMonths
-                : "اختر الأيام"
-            }
-          />
+          {/* ⬅️ Custom Trigger مع النص الصحيح */}
+          <Select.Trigger>
+            <Text
+              style={[
+                styles.triggerText,
+                {
+                  color: formData.duration ? colors.text : colors.textSecondary,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {getDurationLabel()}
+            </Text>
+          </Select.Trigger>
+
           <Select.Content>
             {getDurationOptions().map((option) => (
               <Select.Item key={option.value} value={option.value}>

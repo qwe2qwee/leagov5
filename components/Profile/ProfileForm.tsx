@@ -58,6 +58,11 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
   const fonts = useFontFamily();
   const { isRTL } = useLanguageStore();
 
+  const genderLabels = {
+    male: t.male,
+    female: t.female,
+  };
+
   const handleAgeChange = (text: string) => {
     // Only allow numbers
     const numericText = text.replace(/[^0-9]/g, "");
@@ -137,7 +142,23 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
               onProfileChange({ ...profile, gender: value })
             }
           >
-            <Select.Trigger placeholder={t.genderPlaceholder} />
+            <Select.Trigger placeholder={t.genderPlaceholder}>
+              {/* Override SelectValue to show label instead of value */}
+              {profile.gender && (
+                <Text
+                  style={{
+                    fontSize: responsive.getFontSize(15, 14, 17),
+                    fontFamily: fonts.Regular,
+                    color: colors.text,
+                    flex: 1,
+                    textAlign: "right",
+                  }}
+                >
+                  {genderLabels[profile.gender as keyof typeof genderLabels]}
+                </Text>
+              )}
+            </Select.Trigger>
+
             <Select.Content>
               <Select.Item value="male">{t.male}</Select.Item>
               <Select.Item value="female">{t.female}</Select.Item>
