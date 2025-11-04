@@ -108,27 +108,22 @@ export const getCurrentCustomerProfile = async () => {
       throw new Error("User not authenticated");
     }
 
-    // جلب الملف
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user.id)
+    // ✅ استخدام الدالة من قاعدة البيانات
+    const { data: profile, error } = await supabase
+      .rpc("get_current_user_profile")
       .single();
 
-    if (profileError) {
-      console.error("❌ Error fetching profile:", profileError);
-      throw profileError;
+    if (error) {
+      console.error("❌ Error fetching profile:", error);
+      throw error;
     }
 
-    // التحقق من دور customer
-    const { data: userRole, error: roleError } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "customer")
-      .single();
+    if (!profile) {
+      throw new Error("Profile not found");
+    }
 
-    if (roleError || !userRole) {
+    // ✅ التحقق من أن المستخدم customer
+    if (!(profile as any).is_customer) {
       throw new Error("User is not a customer");
     }
 

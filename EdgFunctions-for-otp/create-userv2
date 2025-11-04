@@ -1,0 +1,285 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.76.1";
+import { corsHeaders } from "../_shared/cors.ts";
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function retryOperation(operation, maxRetries = 3, delayMs = 500) {
+  let lastError = null;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (i < maxRetries - 1) {
+        await wait(delayMs * (i + 1));
+      }
+    }
+  }
+  throw lastError;
+}
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
+  }
+  try {
+    // 1. Authorization
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("No authorization header");
+    }
+    // 2. Create clients
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+        global: {
+          headers: {
+            Authorization: authHeader,
+          },
+        },
+      }
+    );
+    // 3. Verify admin
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseClient.auth.getUser();
+    if (userError || !user) {
+      console.error("User authentication failed:", userError);
+      throw new Error("Unauthorized");
+    }
+    const { data: userRole, error: roleError } = await supabaseClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .single();
+    if (roleError || userRole?.role !== "admin") {
+      console.error("Admin check failed:", roleError, userRole);
+      throw new Error("Only admins can create users");
+    }
+    // 4. Parse and validate
+    const {
+      email,
+      password,
+      full_name,
+      phone,
+      role,
+      branch_id,
+      age,
+      gender,
+      location,
+    } = await req.json();
+    if (!email || !password || !full_name || !role) {
+      throw new Error(
+        "Missing required fields: email, password, full_name, and role"
+      );
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new Error("Invalid email format");
+    }
+    if (password.length < 6) {
+      throw new Error("Password must be at least 6 characters");
+    }
+    const validRoles = ["admin", "branch", "branch_employee", "customer"];
+    if (!validRoles.includes(role)) {
+      throw new Error(`Invalid role. Must be one of: ${validRoles.join(", ")}`);
+    }
+    if ((role === "branch" || role === "branch_employee") && !branch_id) {
+      throw new Error(`branch_id is required for role: ${role}`);
+    }
+    if (branch_id) {
+      const { data: branch, error: branchError } = await supabaseAdmin
+        .from("branches")
+        .select("id")
+        .eq("id", branch_id)
+        .single();
+      if (branchError || !branch) {
+        throw new Error("Invalid branch_id: branch does not exist");
+      }
+    }
+    // Validate gender if provided
+    if (gender && !["male", "female"].includes(gender)) {
+      throw new Error('Invalid gender. Must be "male" or "female"');
+    }
+    console.log("Creating user:", {
+      email,
+      full_name,
+      role,
+      branch_id,
+    });
+    // 5. Create user with metadata
+    const { data: newUser, error: createError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name,
+          phone: phone || null,
+          age: age || null,
+          gender: gender || null,
+          location: location || null,
+        },
+      });
+    if (createError) {
+      console.error("User creation failed:", createError);
+      throw createError;
+    }
+    if (!newUser.user) {
+      throw new Error("Failed to create user");
+    }
+    console.log("User created successfully:", newUser.user.id);
+    // 6. Wait for trigger (handle_new_user) to complete
+    // Trigger creates profile and assigns 'customer' role
+    await wait(1500);
+    // 7. Update profile with additional fields
+    const updateProfile = async () => {
+      // ✅ استخدام onConflict صحيح بناءً على unique constraint
+      const { error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .upsert(
+          {
+            user_id: newUser.user.id,
+            email,
+            full_name,
+            phone: phone || null,
+            age: age || null,
+            gender: gender || null,
+            location: location || null,
+            branch_id: branch_id || null,
+          },
+          {
+            onConflict: "user_id", // ✅ profiles has unique constraint on user_id
+          }
+        );
+      if (profileError) {
+        throw profileError;
+      }
+    };
+    try {
+      await retryOperation(updateProfile, 3, 500);
+      console.log("Profile updated successfully");
+    } catch (profileError) {
+      console.error("Profile update failed:", profileError);
+      await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
+      throw new Error(`Failed to update profile: ${profileError.message}`);
+    }
+    // 8. Assign role if different from 'customer'
+    // The trigger already created 'customer' role
+    if (role !== "customer") {
+      const assignRole = async () => {
+        // ✅ استخدام onConflict صحيح بناءً على unique constraint
+        const { error: roleInsertError } = await supabaseAdmin
+          .from("user_roles")
+          .upsert(
+            {
+              user_id: newUser.user.id,
+              role,
+              assigned_by: user.id,
+            },
+            {
+              onConflict: "user_id,role", // ✅ user_roles has unique constraint on (user_id, role)
+            }
+          );
+        if (roleInsertError) {
+          throw roleInsertError;
+        }
+      };
+      try {
+        await retryOperation(assignRole, 3, 500);
+        console.log("Additional role assigned successfully:", role);
+      } catch (roleError) {
+        console.error("Role assignment failed:", roleError);
+        await supabaseAdmin
+          .from("profiles")
+          .delete()
+          .eq("user_id", newUser.user.id);
+        await supabaseAdmin.auth.admin.deleteUser(newUser.user.id);
+        throw new Error(`Failed to assign role: ${roleError.message}`);
+      }
+    } else {
+      console.log("Customer role already assigned by trigger");
+    }
+    // 9. Get complete user data
+    const { data: completeProfile, error: fetchError } = await supabaseAdmin
+      .from("profiles")
+      .select(
+        `
+        *,
+        user_roles (
+          role,
+          assigned_by,
+          assigned_at
+        ),
+        branches (
+          id,
+          name_ar,
+          name_en,
+          location_ar,
+          location_en
+        )
+      `
+      )
+      .eq("user_id", newUser.user.id)
+      .single();
+    if (fetchError) {
+      console.error("Failed to fetch complete profile:", fetchError);
+    }
+    // 10. Return success
+    return new Response(
+      JSON.stringify({
+        success: true,
+        user: {
+          id: newUser.user.id,
+          email: newUser.user.email,
+          profile: completeProfile,
+        },
+        message: "User created successfully",
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error("Error in create-user function:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred";
+    const statusCode =
+      errorMessage.includes("Unauthorized") ||
+      errorMessage.includes("Only admins")
+        ? 403
+        : 400;
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: errorMessage,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: statusCode,
+      }
+    );
+  }
+});
