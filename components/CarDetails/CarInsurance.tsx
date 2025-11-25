@@ -3,6 +3,7 @@ import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
+import { Headphones, Shield, ShieldAlert, ShieldCheck } from "lucide-react-native";
 import React from "react";
 import { Text, View } from "react-native";
 
@@ -13,13 +14,36 @@ export default function CarInsurance() {
   const { currentLanguage: language } = useLanguageStore();
 
   const insuranceCoverages = [
-    language === "ar"
-      ? "تأمين شامل ضد الحوادث"
-      : "Comprehensive accident insurance",
-    language === "ar" ? "تأمين ضد السرقة" : "Theft insurance",
-    language === "ar" ? "تأمين الطرف الثالث" : "Third party insurance",
-    language === "ar" ? "مساعدة طوارئ 24/7" : "24/7 roadside assistance",
+    {
+      icon: ShieldCheck,
+      text: language === "ar"
+        ? "تأمين شامل ضد الحوادث"
+        : "Comprehensive accident insurance",
+    },
+    {
+      icon: Shield,
+      text: language === "ar" ? "تأمين ضد السرقة" : "Theft insurance",
+    },
+    {
+      icon: ShieldAlert,
+      text: language === "ar" ? "تأمين الطرف الثالث" : "Third party insurance",
+    },
+    {
+      icon: Headphones,
+      text: language === "ar" ? "مساعدة طوارئ 24/7" : "24/7 roadside assistance",
+    },
   ];
+
+  // Get icon color from theme colors
+  const getIconColor = (index: number) => {
+    const colors = [
+      theme.colors.success,   // Green
+      theme.colors.primary,   // Orange
+      theme.colors.warning,   // Yellow
+      theme.colors.info,      // Blue
+    ];
+    return colors[index % colors.length];
+  };
 
   return (
     <Card style={{ marginBottom: responsive.spacing.lg }}>
@@ -34,66 +58,66 @@ export default function CarInsurance() {
         </Card.Title>
       </Card.Header>
       <Card.Content>
-        <View style={{ gap: responsive.spacing.md }}>
-          <Text
-            style={{
-              fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
-              fontSize: responsive.typography.h4,
-              color: theme.colors.text,
-              textAlign: language === "ar" ? "right" : "left",
-              lineHeight: responsive.typography.h4 * 1.3,
-              writingDirection: language === "ar" ? "rtl" : "ltr",
-            }}
-          >
-            {language === "ar" ? "التغطية التأمينية" : "Insurance Coverage"}
-          </Text>
-
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: responsive.spacing.sm,
-            }}
-          >
-            {insuranceCoverages.map((coverage, index) => (
+        <View style={{ gap: responsive.spacing.sm }}>
+          {insuranceCoverages.map((coverage, index) => {
+            const IconComponent = coverage.icon;
+            const iconColor = getIconColor(index);
+            
+            return (
               <View
                 key={index}
                 style={{
-                  backgroundColor: theme.colors.backgroundTertiary,
-                  paddingHorizontal: responsive.spacing.md,
-                  paddingVertical: responsive.spacing.sm,
-                  borderRadius: responsive.getBorderRadius("medium"),
                   flexDirection: language === "ar" ? "row-reverse" : "row",
                   alignItems: "center",
-                  gap: responsive.spacing.sm,
-                  width: "48%",
-                  minHeight: 44,
+                  gap: responsive.spacing.md,
+                  paddingVertical: responsive.spacing.md,
+                  paddingHorizontal: responsive.spacing.md,
+                  backgroundColor:
+                    theme.scheme === "dark"
+                      ? iconColor + "15"
+                      : iconColor + "10",
+                  borderRadius: responsive.getBorderRadius("medium"),
+                  borderWidth: 1,
+                  borderColor:
+                    theme.scheme === "dark"
+                      ? iconColor + "30"
+                      : iconColor + "25",
+                  minHeight: 52,
                 }}
               >
                 <View
                   style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: theme.colors.success,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: iconColor + "20",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
-                />
+                >
+                  <IconComponent
+                    size={20}
+                    color={iconColor}
+                    fill={iconColor + "30"}
+                    strokeWidth={2.5}
+                  />
+                </View>
                 <Text
                   style={{
-                    fontFamily: fonts.Regular,
-                    fontSize: responsive.typography.caption,
+                    fontFamily: fonts.Medium || fonts.Regular,
+                    fontSize: responsive.typography.body,
                     color: theme.colors.text,
                     flex: 1,
                     textAlign: language === "ar" ? "right" : "left",
-                    lineHeight: responsive.typography.caption * 1.4,
+                    lineHeight: responsive.typography.body * 1.4,
                     writingDirection: language === "ar" ? "rtl" : "ltr",
                   }}
                 >
-                  {coverage}
+                  {coverage.text}
                 </Text>
               </View>
-            ))}
-          </View>
+            );
+          })}
         </View>
       </Card.Content>
     </Card>

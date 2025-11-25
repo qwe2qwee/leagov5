@@ -36,23 +36,45 @@ export default function CarBranchInfo({
       <Card.Content>
         <View
           style={{
-            flexDirection: "row",
+            flexDirection: language === "ar" ? "row-reverse" : "row",
             alignItems: "flex-start",
             gap: responsive.spacing.md,
           }}
         >
-          <MapPin
-            size={responsive.getIconSize("medium")}
-            color={theme.colors.primary}
-          />
+          {/* Icon with Circular Background */}
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor:
+                theme.scheme === "dark"
+                  ? theme.colors.primary + "20"
+                  : theme.colors.primary + "15",
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 1.5,
+              borderColor:
+                theme.scheme === "dark"
+                  ? theme.colors.primary + "40"
+                  : theme.colors.primary + "30",
+            }}
+          >
+            <MapPin
+              size={24}
+              color={theme.colors.primary}
+              strokeWidth={2.5}
+            />
+          </View>
+
           <View style={{ flex: 1 }}>
             <Text
               style={{
-                fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
-                fontSize: responsive.typography.body,
+                fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
+                fontSize: responsive.typography.h4,
                 color: theme.colors.text,
                 textAlign: language === "ar" ? "right" : "left",
-                lineHeight: responsive.typography.body * 1.3,
+                lineHeight: responsive.typography.h4 * 1.3,
                 marginBottom: responsive.spacing.xs,
                 writingDirection: language === "ar" ? "rtl" : "ltr",
               }}
@@ -62,10 +84,10 @@ export default function CarBranchInfo({
             <Text
               style={{
                 fontFamily: fonts.Regular,
-                fontSize: responsive.typography.caption,
+                fontSize: responsive.typography.body,
                 color: theme.colors.textSecondary,
                 textAlign: language === "ar" ? "right" : "left",
-                lineHeight: responsive.typography.caption * 1.4,
+                lineHeight: responsive.typography.body * 1.4,
                 writingDirection: language === "ar" ? "rtl" : "ltr",
               }}
             >

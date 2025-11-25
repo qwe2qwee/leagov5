@@ -105,6 +105,18 @@ export default function CarSpecifications({
     },
   ];
 
+  // Get icon colors based on theme
+  const getIconColors = (index: number) => {
+    // Use theme colors with variations
+    const baseColors = [
+      theme.colors.primary, // Primary orange
+      theme.colors.success, // Success green
+      theme.colors.warning, // Warning yellow
+      theme.colors.error, // Error red
+    ];
+    return baseColors[index % baseColors.length];
+  };
+
   return (
     <Card style={{ marginBottom: responsive.spacing.lg }}>
       <Card.Header>
@@ -118,52 +130,82 @@ export default function CarSpecifications({
         </Card.Title>
       </Card.Header>
       <Card.Content>
-        <View style={{ gap: responsive.spacing.md }}>
-          {specifications.map((spec, index) => (
-            <View
-              key={index}
-              style={{
-                flexDirection: language === "ar" ? "row-reverse" : "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingVertical: responsive.spacing.sm,
-                borderBottomWidth: index < specifications.length - 1 ? 1 : 0,
-                borderBottomColor: theme.colors.border + "30",
-                minHeight: 48,
-              }}
-            >
-              <spec.icon
-                size={responsive.getIconSize("medium")}
-                color={theme.colors.textSecondary}
+        <View style={{ gap: responsive.spacing.lg }}>
+          {specifications.map((spec, index) => {
+            const iconColor = getIconColors(index);
+            return (
+              <View
+                key={index}
                 style={{
-                  marginHorizontal: responsive.spacing.sm,
-                }}
-              />
-              <Text
-                style={{
-                  fontFamily: fonts.Medium || fonts.Regular,
-                  fontSize: responsive.typography.body,
-                  color: theme.colors.text,
-                  flex: 1,
-                  textAlign: language === "ar" ? "right" : "left",
-                  lineHeight: responsive.typography.body * 1.3,
+                  flexDirection: language === "ar" ? "row-reverse" : "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingVertical: responsive.spacing.xs,
                 }}
               >
-                {spec.label}:
-              </Text>
-              <Text
-                style={{
-                  fontFamily: fonts.Regular,
-                  fontSize: responsive.typography.body,
-                  color: theme.colors.textSecondary,
-                  textAlign: language === "ar" ? "left" : "right",
-                  lineHeight: responsive.typography.body * 1.3,
-                }}
-              >
-                {spec.value}
-              </Text>
-            </View>
-          ))}
+                {/* Icon with Theme Color Background */}
+                <View
+                  style={{
+                    flexDirection: language === "ar" ? "row-reverse" : "row",
+                    alignItems: "center",
+                    gap: responsive.spacing.md,
+                    flex: 1,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 24,
+                      backgroundColor:
+                        theme.scheme === "dark"
+                          ? iconColor + "20"
+                          : iconColor + "15",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderWidth: 1.5,
+                      borderColor:
+                        theme.scheme === "dark"
+                          ? iconColor + "40"
+                          : iconColor + "30",
+                    }}
+                  >
+                    <spec.icon
+                      size={responsive.getIconSize("medium")}
+                      color={iconColor}
+                      strokeWidth={2.5}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontFamily: fonts.Medium || fonts.Regular,
+                        fontSize: responsive.typography.body,
+                        color: theme.colors.text,
+                        textAlign: language === "ar" ? "right" : "left",
+                        lineHeight: responsive.typography.body * 1.3,
+                        marginBottom: 2,
+                      }}
+                    >
+                      {spec.label}
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: fonts.Regular,
+                        fontSize: responsive.typography.caption,
+                        color: theme.colors.textSecondary,
+                        textAlign: language === "ar" ? "right" : "left",
+                        lineHeight: responsive.typography.caption * 1.3,
+                      }}
+                    >
+                      {spec.value}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
         </View>
       </Card.Content>
     </Card>

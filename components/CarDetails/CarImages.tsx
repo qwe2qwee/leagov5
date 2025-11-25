@@ -41,6 +41,16 @@ export default function CarImages({
           overflow: "hidden",
           backgroundColor: theme.colors.backgroundSecondary,
           marginBottom: responsive.spacing.md,
+          elevation: 8,
+          shadowColor: theme.colors.primary,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: theme.scheme === "dark" ? 0.5 : 0.15,
+          shadowRadius: 12,
+          borderWidth: 1,
+          borderColor:
+            theme.scheme === "dark"
+              ? theme.colors.border + "40"
+              : theme.colors.border + "30",
         }}
       >
         <Image
@@ -58,7 +68,7 @@ export default function CarImages({
           resizeMode="cover"
         />
 
-        {/* Badges Overlay */}
+        {/* Badges Overlay with Enhanced Design */}
         <View
           style={{
             position: "absolute",
@@ -67,30 +77,60 @@ export default function CarImages({
             left: language === "ar" ? undefined : responsive.spacing.md,
             flexDirection: "row",
             flexWrap: "wrap",
-            gap: responsive.spacing.xs,
+            gap: responsive.spacing.sm,
           }}
         >
           {isNew && (
-            <Badge variant="success" size="sm">
-              {language === "ar" ? "جديد" : "New"}
-            </Badge>
+            <View
+              style={{
+                elevation: 4,
+                shadowColor: theme.colors.success,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4,
+                shadowRadius: 4,
+              }}
+            >
+              <Badge variant="success" size="sm">
+                {language === "ar" ? "جديد" : "New"}
+              </Badge>
+            </View>
           )}
           {discountPercentage > 0 && (
-            <Badge variant="warning" size="sm">
-              {language === "ar"
-                ? `خصم ${discountPercentage}%`
-                : `${discountPercentage}% Off`}
-            </Badge>
+            <View
+              style={{
+                elevation: 4,
+                shadowColor: theme.colors.warning,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4,
+                shadowRadius: 4,
+              }}
+            >
+              <Badge variant="warning" size="sm">
+                {language === "ar"
+                  ? `خصم ${discountPercentage}%`
+                  : `${discountPercentage}% Off`}
+              </Badge>
+            </View>
           )}
           {isAvailable && (
-            <Badge variant="available" size="sm">
-              {language === "ar" ? "متاح" : "Available"}
-            </Badge>
+            <View
+              style={{
+                elevation: 4,
+                shadowColor: theme.colors.primary,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4,
+                shadowRadius: 4,
+              }}
+            >
+              <Badge variant="available" size="sm">
+                {language === "ar" ? "متاح" : "Available"}
+              </Badge>
+            </View>
           )}
         </View>
       </View>
 
-      {/* Thumbnail Images */}
+      {/* Thumbnail Images with Enhanced Selection */}
       {images.length > 1 && (
         <ScrollView
           horizontal
@@ -104,16 +144,30 @@ export default function CarImages({
             <TouchableOpacity
               key={index}
               onPress={() => setSelectedImageIndex(index)}
+              activeOpacity={0.7}
               style={{
                 width: 70,
                 height: 70,
                 borderRadius: responsive.getBorderRadius("medium"),
                 overflow: "hidden",
-                borderWidth: 2,
+                borderWidth: index === selectedImageIndex ? 3 : 1.5,
                 borderColor:
                   index === selectedImageIndex
                     ? theme.colors.primary
-                    : "transparent",
+                    : theme.scheme === "dark"
+                    ? theme.colors.border + "60"
+                    : theme.colors.border + "80",
+                elevation: index === selectedImageIndex ? 6 : 2,
+                shadowColor:
+                  index === selectedImageIndex
+                    ? theme.colors.primary
+                    : "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: index === selectedImageIndex ? 0.4 : 0.1,
+                shadowRadius: index === selectedImageIndex ? 6 : 3,
+                transform: [
+                  { scale: index === selectedImageIndex ? 1.05 : 1 },
+                ],
               }}
             >
               <Image
