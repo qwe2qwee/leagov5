@@ -44,6 +44,7 @@ const BookingButtonSection: React.FC<BookingButtonSectionProps> = ({
   const styles = StyleSheet.create({
     container: {
       marginTop: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      marginBottom: responsive.safeAreaBottom + responsive.spacing.md + responsive.spacing.md + responsive.spacing.sm,
     },
   });
 

@@ -3,7 +3,7 @@ import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
-import { Ionicons } from "@expo/vector-icons";
+import { Calendar, Clock, RefreshCw } from "lucide-react-native";
 import React, { useCallback, useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -49,7 +49,8 @@ export default function BookingForm({
   texts,
   prices,
 }: BookingFormProps) {
-  const { colors } = useTheme();
+  const theme = useTheme();
+  const { colors, scheme } = theme;
   const responsive = useResponsive();
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
@@ -88,7 +89,6 @@ export default function BookingForm({
     return [];
   }, [formData.rentalType, currentLanguage]);
 
-  // ⬅️ جديد: Map للحصول على label من value
   const rentalTypeLabels = useMemo(() => {
     const map: Record<string, string> = {};
     availableRentalTypes.forEach((type) => {
@@ -97,7 +97,6 @@ export default function BookingForm({
     return map;
   }, [availableRentalTypes]);
 
-  // ⬅️ جديد: Map للحصول على duration label من value
   const durationLabels = useMemo(() => {
     const map: Record<string, string> = {};
     getDurationOptions().forEach((option) => {
@@ -106,13 +105,11 @@ export default function BookingForm({
     return map;
   }, [getDurationOptions]);
 
-  // ⬅️ جديد: دالة للحصول على نص Rental Type
   const getRentalTypeLabel = useCallback(() => {
     if (!formData.rentalType) return texts.selectRentalType;
     return rentalTypeLabels[formData.rentalType] || formData.rentalType;
   }, [formData.rentalType, rentalTypeLabels, texts.selectRentalType]);
 
-  // ⬅️ جديد: دالة للحصول على نص Duration
   const getDurationLabel = useCallback(() => {
     const durationStr = formData.duration.toString();
     if (!durationStr) {
@@ -171,13 +168,18 @@ export default function BookingForm({
 
   const styles = StyleSheet.create({
     formSection: {
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      marginBottom: responsive.spacing.lg,
+    },
+    labelRow: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: responsive.spacing.sm,
+      marginBottom: responsive.spacing.sm,
     },
     formLabel: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
+      fontSize: responsive.typography.body,
+      fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.text,
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
       textAlign: isRTL ? "right" : "left",
     },
     dateButton: {
@@ -187,47 +189,51 @@ export default function BookingForm({
       backgroundColor: colors.surface,
       borderWidth: 2,
       borderColor: formData.startDate ? colors.primary : colors.border,
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      padding: responsive.getResponsiveValue(14, 16, 18, 20, 22),
-      minHeight: responsive.getInputHeight(),
+      borderRadius: responsive.getBorderRadius("medium"),
+      padding: responsive.spacing.md,
+      minHeight: 56,
     },
     dateButtonText: {
-      fontSize: responsive.getFontSize(15, 14, 17),
-      fontFamily: fonts.Regular,
-      color: formData.startDate ? colors.text : colors.textSecondary,
-      flex: 1,
-      textAlign: isRTL ? "right" : "left",
-    },
-    dateButtonPlaceholder: {
-      fontSize: responsive.getFontSize(15, 14, 17),
-      fontFamily: fonts.Regular,
-      color: colors.textMuted,
+      fontSize: responsive.typography.body,
+      fontFamily: fonts.Medium || fonts.Regular,
+      color: formData.startDate ? colors.text : colors.textMuted,
       flex: 1,
       textAlign: isRTL ? "right" : "left",
     },
     dateButtonIcon: {
-      marginLeft: isRTL ? 0 : responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginRight: isRTL ? responsive.getResponsiveValue(8, 10, 12, 14, 16) : 0,
+      marginLeft: isRTL ? 0 : responsive.spacing.sm,
+      marginRight: isRTL ? responsive.spacing.sm : 0,
     },
     totalPriceContainer: {
-      marginTop: responsive.getResponsiveValue(12, 14, 16, 18, 20),
-      padding: responsive.getResponsiveValue(10, 12, 14, 16, 18),
-      backgroundColor: colors.surface,
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      marginTop: responsive.spacing.lg,
+      padding: responsive.spacing.lg,
+      backgroundColor:
+        scheme === "dark" ? colors.primary + "20" : colors.primary + "10",
+      borderRadius: responsive.getBorderRadius("large"),
+      borderWidth: 1.5,
+      borderColor:
+        scheme === "dark" ? colors.primary + "40" : colors.primary + "30",
+      alignItems: "center",
     },
-    totalPriceText: {
-      fontSize: responsive.getFontSize(16, 15, 18),
+    totalPriceLabel: {
+      fontSize: responsive.typography.body,
+      fontFamily: fonts.Medium || fonts.Regular,
+      color: colors.text,
+      marginBottom: responsive.spacing.xs,
+      textAlign: "center",
+    },
+    totalPriceValue: {
+      fontSize: responsive.typography.h2,
       fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
       color: colors.primary,
-      textAlign: isRTL ? "right" : "left",
+      textAlign: "center",
     },
-    // ⬅️ جديد: Style للـ custom trigger text
     triggerText: {
-      fontSize: responsive.getFontSize(15, 14, 17),
+      fontSize: responsive.typography.body,
       fontFamily: fonts.Regular,
       flex: 1,
       textAlign: "right",
-      lineHeight: Math.round(responsive.getFontSize(15, 14, 17) * 1.3),
+      lineHeight: responsive.typography.body * 1.3,
     },
   });
 
@@ -235,14 +241,20 @@ export default function BookingForm({
     <View>
       {/* Rental Type */}
       <View style={styles.formSection}>
-        <Text style={styles.formLabel}>{texts.rentalType}</Text>
+        <View style={styles.labelRow}>
+          <RefreshCw
+            size={responsive.getIconSize("small")}
+            color={colors.primary}
+            strokeWidth={2.5}
+          />
+          <Text style={styles.formLabel}>{texts.rentalType}</Text>
+        </View>
         <Select
           value={formData.rentalType}
           onValueChange={(value) =>
             onFormDataChange({ rentalType: value as RentalType, duration: 1 })
           }
         >
-          {/* ⬅️ Custom Trigger مع النص الصحيح */}
           <Select.Trigger>
             <Text
               style={[
@@ -271,14 +283,20 @@ export default function BookingForm({
 
       {/* Duration */}
       <View style={styles.formSection}>
-        <Text style={styles.formLabel}>{texts.duration}</Text>
+        <View style={styles.labelRow}>
+          <Clock
+            size={responsive.getIconSize("small")}
+            color={colors.primary}
+            strokeWidth={2.5}
+          />
+          <Text style={styles.formLabel}>{texts.duration}</Text>
+        </View>
         <Select
           value={formData.duration.toString()}
           onValueChange={(value) =>
             onFormDataChange({ duration: parseInt(value) })
           }
         >
-          {/* ⬅️ Custom Trigger مع النص الصحيح */}
           <Select.Trigger>
             <Text
               style={[
@@ -305,32 +323,37 @@ export default function BookingForm({
 
       {/* Start Date */}
       <View style={styles.formSection}>
-        <Text style={styles.formLabel}>
-          {formData.rentalType === "daily" ? texts.rentalDate : texts.startDate}
-        </Text>
+        <View style={styles.labelRow}>
+          <Calendar
+            size={responsive.getIconSize("small")}
+            color={colors.primary}
+            strokeWidth={2.5}
+          />
+          <Text style={styles.formLabel}>
+            {formData.rentalType === "daily" ? texts.rentalDate : texts.startDate}
+          </Text>
+        </View>
         <TouchableOpacity
           style={styles.dateButton}
           onPress={onOpenCalendar}
           activeOpacity={0.7}
         >
-          {formData.startDate ? (
-            <Text style={styles.dateButtonText}>
-              {formatDisplayDate(formData.startDate)}
-            </Text>
-          ) : (
-            <Text style={styles.dateButtonPlaceholder}>
-              {texts.tapToSelectDate}
-            </Text>
-          )}
+          <Text style={styles.dateButtonText}>
+            {formData.startDate
+              ? formatDisplayDate(formData.startDate)
+              : texts.tapToSelectDate}
+          </Text>
           <View style={styles.dateButtonIcon}>
-            <Ionicons
-              name="calendar"
+            <Calendar
               size={responsive.getIconSize("small")}
               color={formData.startDate ? colors.primary : colors.textSecondary}
+              strokeWidth={2}
             />
           </View>
         </TouchableOpacity>
       </View>
+
+
     </View>
   );
 }

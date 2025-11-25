@@ -4,7 +4,7 @@ import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
-import { Ionicons } from "@expo/vector-icons";
+import { Fuel, Gauge, MapPin, Users } from "lucide-react-native";
 import React from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 
@@ -45,10 +45,33 @@ export default function BookingCarInfo({
   seatsLabel,
   riyalLabel,
 }: BookingCarInfoProps) {
-  const { colors } = useTheme();
+  const theme = useTheme();
+  const { colors, scheme } = theme;
   const responsive = useResponsive();
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
+
+  // Helper functions
+  const getTransmissionLabel = () => {
+    if (car.transmission === "automatic") {
+      return currentLanguage === "ar" ? "أوتوماتيك" : "Automatic";
+    }
+    return currentLanguage === "ar" ? "يدوي" : "Manual";
+  };
+
+  const getFuelTypeLabel = () => {
+    const fuelTypes: { [key: string]: { ar: string; en: string } } = {
+      gasoline: { ar: "بنزين", en: "Gasoline" },
+      diesel: { ar: "ديزل", en: "Diesel" },
+      electric: { ar: "كهربائي", en: "Electric" },
+      hybrid: { ar: "هجين", en: "Hybrid" },
+    };
+    const fuelType = fuelTypes[car.fuel_type] || {
+      ar: "بنزين",
+      en: "Gasoline",
+    };
+    return currentLanguage === "ar" ? fuelType.ar : fuelType.en;
+  };
 
   const styles = StyleSheet.create({
     cardContainer: {
@@ -56,65 +79,74 @@ export default function BookingCarInfo({
     },
     carImage: {
       width: "100%",
-      height: responsive.getResponsiveValue(180, 200, 220, 240, 260),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      height: 200,
+      borderRadius: responsive.getBorderRadius("large"),
+      marginBottom: responsive.spacing.md,
+      backgroundColor: colors.backgroundSecondary,
+    },
+    titleRow: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: responsive.spacing.xs,
     },
     carTitle: {
-      fontSize: responsive.getFontSize(18, 17, 21),
+      fontSize: responsive.typography.h3,
       fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
       color: colors.text,
-      marginBottom: responsive.getResponsiveValue(4, 6, 8, 10, 12),
+      flex: 1,
       textAlign: isRTL ? "right" : "left",
     },
-    carSubtitle: {
-      fontSize: responsive.getFontSize(14, 13, 16),
+    colorRow: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      gap: responsive.spacing.xs,
+      marginBottom: responsive.spacing.md,
+    },
+    colorDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.textSecondary,
+    },
+    colorText: {
+      fontSize: responsive.typography.body,
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
-      marginBottom: responsive.getResponsiveValue(8, 12, 16, 18, 20),
       textAlign: isRTL ? "right" : "left",
     },
     badgeContainer: {
       flexDirection: isRTL ? "row-reverse" : "row",
       flexWrap: "wrap",
-      gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      gap: responsive.spacing.sm,
+      marginBottom: responsive.spacing.lg,
     },
-    carInfoGrid: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "space-between",
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+    specsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: responsive.spacing.md,
     },
-    carInfoItem: {
+    specItem: {
       flexDirection: isRTL ? "row-reverse" : "row",
       alignItems: "center",
-      gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      gap: responsive.spacing.sm,
+      width: "47%",
+      paddingVertical: responsive.spacing.sm,
+      paddingHorizontal: responsive.spacing.md,
+      backgroundColor:
+        scheme === "dark"
+          ? colors.backgroundSecondary
+          : colors.backgroundTertiary,
+      borderRadius: responsive.getBorderRadius("medium"),
+      borderWidth: 1,
+      borderColor: colors.border,
     },
-    carInfoText: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Regular,
+    specText: {
+      fontSize: responsive.typography.body,
+      fontFamily: fonts.Medium || fonts.Regular,
       color: colors.text,
-    },
-    separator: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-    },
-    priceRow: {
-      flexDirection: isRTL ? "row-reverse" : "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-    },
-    priceLabel: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Regular,
-      color: colors.text,
-    },
-    priceValue: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
+      flex: 1,
+      textAlign: isRTL ? "right" : "left",
     },
   });
 
@@ -124,58 +156,92 @@ export default function BookingCarInfo({
         <Card.Title size="md">{cardTitle}</Card.Title>
       </Card.Header>
       <Card.Content>
+        {/* Car Image */}
         <Image
           source={{ uri: car.main_image_url }}
           style={styles.carImage}
           resizeMode="cover"
         />
 
+        {/* Title Row */}
         <Text style={styles.carTitle}>
           {currentLanguage === "ar"
             ? `${car.brand_name_ar} ${car.model_name_ar} ${car.model_year}`
             : `${car.brand_name_en} ${car.model_name_en} ${car.model_year}`}
         </Text>
-        <Text style={styles.carSubtitle}>
-          {currentLanguage === "ar" ? car.color_name_ar : car.color_name_en}
-        </Text>
 
-        <View style={styles.badgeContainer}>
-          {car.is_new && (
-            <Badge variant="secondary" size="sm">
-              {newLabel}
-            </Badge>
-          )}
-          {car.discount_percentage > 0 && (
-            <Badge variant="destructive" size="sm">
-              {currentLanguage === "ar"
-                ? `خصم ${car.discount_percentage}%`
-                : `${car.discount_percentage}% Off`}
-            </Badge>
-          )}
+        {/* Color with Dot */}
+        <View style={styles.colorRow}>
+          <View style={styles.colorDot} />
+          <Text style={styles.colorText}>
+            {currentLanguage === "ar" ? car.color_name_ar : car.color_name_en}
+          </Text>
         </View>
 
-        <View style={styles.carInfoGrid}>
-          <View style={styles.carInfoItem}>
-            <Ionicons
-              name="location"
+        {/* Badges */}
+        {(car.is_new || car.discount_percentage > 0) && (
+          <View style={styles.badgeContainer}>
+            {car.is_new && (
+              <Badge variant="success" size="sm">
+                {newLabel}
+              </Badge>
+            )}
+            {car.discount_percentage > 0 && (
+              <Badge variant="warning" size="sm">
+                {currentLanguage === "ar"
+                  ? `خصم ${car.discount_percentage}%`
+                  : `${car.discount_percentage}% Off`}
+              </Badge>
+            )}
+          </View>
+        )}
+
+        {/* Specs Grid 2x2 */}
+        <View style={styles.specsGrid}>
+          {/* Branch */}
+          <View style={styles.specItem}>
+            <MapPin
               size={responsive.getIconSize("small")}
-              color={colors.textSecondary}
+              color={colors.primary}
+              strokeWidth={2.5}
             />
-            <Text style={styles.carInfoText}>
+            <Text style={styles.specText} numberOfLines={1}>
               {currentLanguage === "ar"
                 ? car.branch_name_ar
                 : car.branch_name_en}
             </Text>
           </View>
-          <View style={styles.carInfoItem}>
-            <Ionicons
-              name="people"
+
+          {/* Transmission */}
+          <View style={styles.specItem}>
+            <Gauge
               size={responsive.getIconSize("small")}
-              color={colors.textSecondary}
+              color={colors.primary}
+              strokeWidth={2.5}
             />
-            <Text style={styles.carInfoText}>
+            <Text style={styles.specText}>{getTransmissionLabel()}</Text>
+          </View>
+
+          {/* Seats */}
+          <View style={styles.specItem}>
+            <Users
+              size={responsive.getIconSize("small")}
+              color={colors.primary}
+              strokeWidth={2.5}
+            />
+            <Text style={styles.specText}>
               {car.seats} {seatsLabel}
             </Text>
+          </View>
+
+          {/* Fuel */}
+          <View style={styles.specItem}>
+            <Fuel
+              size={responsive.getIconSize("small")}
+              color={colors.primary}
+              strokeWidth={2.5}
+            />
+            <Text style={styles.specText}>{getFuelTypeLabel()}</Text>
           </View>
         </View>
       </Card.Content>

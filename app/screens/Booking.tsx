@@ -1,5 +1,6 @@
 // screens/BookingScreen.tsx (المحدثة)
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -8,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -56,7 +58,8 @@ interface CalendarDate {
 const BookingScreen: React.FC = () => {
   const { carId } = useLocalSearchParams<{ carId?: string }>();
   const router = useRouter();
-  const { colors } = useTheme();
+  const theme = useTheme();
+  const { colors, scheme } = theme;
   const responsive = useResponsive();
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
@@ -551,11 +554,39 @@ const BookingScreen: React.FC = () => {
     },
   });
 
-  // Render Loading (نفسه)
+  // Render Loading
   if (isLoadingCar || isLoadingEligibility) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <LinearGradient
+          colors={
+            scheme === "dark"
+              ? [colors.primary + "20", colors.primary + "10", "transparent"]
+              : [colors.primary + "10", colors.primary + "05", "transparent"]
+          }
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "50%",
+          }}
+        />
+        <View
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: colors.primary + "15",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 24,
+            borderWidth: 2,
+            borderColor: colors.primary + "30",
+          }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
         <Text style={styles.loadingText}>{t.loading}</Text>
         <Text style={styles.loadingSubtext}>
           {currentLanguage === "ar" ? "يرجى الانتظار" : "Please wait"}
@@ -574,38 +605,163 @@ const BookingScreen: React.FC = () => {
   ) {
     return (
       <View style={styles.loadingContainer}>
-        <Ionicons
-          name="accessibility-outline"
-          size={64}
-          color={colors.warning}
-          style={styles.errorIcon}
+        <LinearGradient
+          colors={
+            scheme === "dark"
+              ? [colors.warning + "20", colors.warning + "10", "transparent"]
+              : [colors.warning + "10", colors.warning + "05", "transparent"]
+          }
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "50%",
+          }}
         />
-        <Text style={styles.loadingText}>{t.notEligible}</Text>
-        <Text style={styles.loadingSubtext}>
+        <View
+          style={{
+            width: 100,
+            height: 100,
+            borderRadius: 50,
+            backgroundColor:
+              scheme === "dark"
+                ? colors.warning + "20"
+                : colors.warning + "15",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 24,
+            borderWidth: 3,
+            borderColor:
+              scheme === "dark"
+                ? colors.warning + "40"
+                : colors.warning + "30",
+          }}
+        >
+          <Ionicons
+            name={
+              eligibility.reason_code === "DOCUMENTS_REQUIRED"
+                ? "document-text-outline"
+                : eligibility.reason_code === "NOT_AUTHENTICATED"
+                ? "log-in-outline"
+                : "accessibility-outline"
+            }
+            size={50}
+            color={colors.warning}
+          />
+        </View>
+        <Text
+          style={[
+            styles.loadingText,
+            { fontSize: responsive.getFontSize(20, 19, 24) },
+          ]}
+        >
+          {t.notEligible}
+        </Text>
+        <Text
+          style={[
+            styles.loadingSubtext,
+            {
+              paddingHorizontal: 32,
+              lineHeight: responsive.getFontSize(14, 13, 16) * 1.5,
+            },
+          ]}
+        >
           {currentLanguage === "ar"
             ? eligibility.reason_message_ar
             : eligibility.reason_message_en}
         </Text>
 
         {/* ✅ زر مساعدة */}
-        <View style={styles.buttonContainer}>
+        <View style={[styles.buttonContainer, { width: "80%" }]}>
           {eligibility.reason_code === "DOCUMENTS_REQUIRED" && (
-            <CustomButton
-              title={
-                currentLanguage === "ar" ? "رفع المستندات" : "Upload Documents"
-              }
+            <TouchableOpacity
               onPress={() => router.push("/screens/DocumentsUploadScreen")}
-              bgVariant="primary"
-            />
+              activeOpacity={0.8}
+              style={{
+                overflow: "hidden",
+                borderRadius: responsive.getBorderRadius("medium"),
+                elevation: 6,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.3,
+                shadowRadius: 6,
+              }}
+            >
+              <LinearGradient
+                colors={
+                  scheme === "dark"
+                    ? [colors.primary, colors.primaryLight]
+                    : [colors.primary, colors.primaryDark]
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: responsive.spacing.md + 2,
+                  paddingHorizontal: responsive.spacing.lg,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 50,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
+                    fontSize: responsive.getFontSize(16, 15, 18),
+                    color: "#FFFFFF",
+                  }}
+                >
+                  {currentLanguage === "ar"
+                    ? "رفع المستندات"
+                    : "Upload Documents"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           )}
 
           {eligibility.reason_code === "NOT_AUTHENTICATED" && (
-            <CustomButton
-              title={t.notEligible}
+            <TouchableOpacity
               onPress={() => router.replace("/(auth)/sign-in")}
-              bgVariant="primary"
-            />
+              activeOpacity={0.8}
+              style={{
+                overflow: "hidden",
+                borderRadius: responsive.getBorderRadius("medium"),
+                elevation: 6,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.3,
+                shadowRadius: 6,
+              }}
+            >
+              <LinearGradient
+                colors={
+                  scheme === "dark"
+                    ? [colors.primary, colors.primaryLight]
+                    : [colors.primary, colors.primaryDark]
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: responsive.spacing.md + 2,
+                  paddingHorizontal: responsive.spacing.lg,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 50,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
+                    fontSize: responsive.getFontSize(16, 15, 18),
+                    color: "#FFFFFF",
+                  }}
+                >
+                  {currentLanguage === "ar" ? "تسجيل الدخول" : "Sign In"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           )}
+          
           {eligibility.reason_code !== "NOT_AUTHENTICATED" &&
             eligibility.reason_code !== "DOCUMENTS_REQUIRED" && (
               <CustomButton
@@ -625,23 +781,69 @@ const BookingScreen: React.FC = () => {
   if (car && (!car.rental_types || car.rental_types.length === 0)) {
     return (
       <View style={styles.loadingContainer}>
-        <Ionicons
-          name="close-circle"
-          size={64}
-          color={colors.error}
-          style={styles.errorIcon}
+        <LinearGradient
+          colors={
+            scheme === "dark"
+              ? [colors.error + "20", colors.error + "10", "transparent"]
+              : [colors.error + "10", colors.error + "05", "transparent"]
+          }
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "50%",
+          }}
         />
-        <Text style={styles.loadingText}>
+        <View
+          style={{
+            width: 100,
+            height: 100,
+            borderRadius: 50,
+            backgroundColor:
+              scheme === "dark"
+                ? colors.error + "20"
+                : colors.error + "15",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 24,
+            borderWidth: 3,
+            borderColor:
+              scheme === "dark"
+                ? colors.error + "40"
+                : colors.error + "30",
+          }}
+        >
+          <Ionicons
+            name="close-circle"
+            size={50}
+            color={colors.error}
+          />
+        </View>
+        <Text
+          style={[
+            styles.loadingText,
+            { fontSize: responsive.getFontSize(20, 19, 24) },
+          ]}
+        >
           {currentLanguage === "ar"
             ? "غير متاح للحجز"
             : "Not Available for Booking"}
         </Text>
-        <Text style={styles.loadingSubtext}>
+        <Text
+          style={[
+            styles.loadingSubtext,
+            {
+              paddingHorizontal: 32,
+              lineHeight: responsive.getFontSize(14, 13, 16) * 1.5,
+            },
+          ]}
+        >
           {currentLanguage === "ar"
             ? "هذه السيارة غير متاحة للحجز حالياً"
             : "This car is not available for booking at the moment"}
         </Text>
-        <View style={styles.buttonContainer}>
+        <View style={[styles.buttonContainer, { width: "80%" }]}>
           <CustomButton
             title={t.backToSearch}
             onPress={() => router.back()}
@@ -657,19 +859,67 @@ const BookingScreen: React.FC = () => {
   if (carError || !car) {
     return (
       <View style={styles.loadingContainer}>
-        <Ionicons
-          name="alert-circle"
-          size={64}
-          color={colors.error}
-          style={styles.errorIcon}
+        <LinearGradient
+          colors={
+            scheme === "dark"
+              ? [colors.error + "20", colors.error + "10", "transparent"]
+              : [colors.error + "10", colors.error + "05", "transparent"]
+          }
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "50%",
+          }}
         />
-        <Text style={styles.loadingText}>{t.carNotFound}</Text>
-        <Text style={styles.loadingSubtext}>
+        <View
+          style={{
+            width: 100,
+            height: 100,
+            borderRadius: 50,
+            backgroundColor:
+              scheme === "dark"
+                ? colors.error + "20"
+                : colors.error + "15",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 24,
+            borderWidth: 3,
+            borderColor:
+              scheme === "dark"
+                ? colors.error + "40"
+                : colors.error + "30",
+          }}
+        >
+          <Ionicons
+            name="alert-circle"
+            size={50}
+            color={colors.error}
+          />
+        </View>
+        <Text
+          style={[
+            styles.loadingText,
+            { fontSize: responsive.getFontSize(20, 19, 24) },
+          ]}
+        >
+          {t.carNotFound}
+        </Text>
+        <Text
+          style={[
+            styles.loadingSubtext,
+            {
+              paddingHorizontal: 32,
+              lineHeight: responsive.getFontSize(14, 13, 16) * 1.5,
+            },
+          ]}
+        >
           {currentLanguage === "ar"
             ? "لا يمكن العثور على السيارة المطلوبة أو أنها غير متاحة"
             : "Cannot find the requested car or it is not available"}
         </Text>
-        <View style={styles.buttonContainer}>
+        <View style={[styles.buttonContainer, { width: "80%" }]}>
           <CustomButton
             title={t.backToSearch}
             onPress={() => router.back()}
@@ -681,7 +931,7 @@ const BookingScreen: React.FC = () => {
   }
 
   // ============================================
-  // Render Error - Not Eligible
+  // Render Error - Not Eligible (Duplicate - will be removed)
   // ============================================
   if (eligibility && !eligibility.is_eligible) {
     return (

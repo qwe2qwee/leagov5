@@ -1,13 +1,15 @@
+import { Card } from "@/components/ui/Card";
 import CustomButton from "@/components/ui/CustomButton";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
+import { Mail, Phone, User } from "lucide-react-native";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 interface UserProfile {
-  full_name: string;
+  name: string;
   phone?: string;
   email: string;
 }
@@ -37,33 +39,55 @@ export default function BookingButton({
   texts,
   totalPrice,
 }: BookingButtonProps) {
-  const { colors } = useTheme();
+  const theme = useTheme();
+  const { colors, scheme } = theme;
   const responsive = useResponsive();
   const fonts = useFontFamily();
-  const { isRTL } = useLanguageStore();
+  const { isRTL, currentLanguage } = useLanguageStore();
 
   const styles = StyleSheet.create({
-    userInfo: {
-      backgroundColor: colors.backgroundSecondary,
-      padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+    card: {
+      marginBottom: responsive.spacing.lg,
     },
-    userInfoTitle: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Medium || fonts.SemiBold || fonts.Regular,
+    infoRow: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "flex-start",
+      gap: responsive.spacing.md,
+      paddingVertical: responsive.spacing.sm,
+      paddingHorizontal: responsive.spacing.md,
+      backgroundColor:
+        scheme === "dark"
+          ? colors.backgroundSecondary
+          : colors.backgroundTertiary,
+      borderRadius: responsive.getBorderRadius("medium"),
+      marginBottom: responsive.spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    iconContainer: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primary + "20",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    infoContent: {
+      flex: 1,
+    },
+    infoLabel: {
+      fontSize: responsive.typography.caption,
+      fontFamily: fonts.Medium || fonts.Regular,
       color: colors.textSecondary,
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      marginBottom: responsive.spacing.xs / 2,
       textAlign: isRTL ? "right" : "left",
     },
-    userInfoRow: {
-      marginBottom: responsive.getResponsiveValue(2, 3, 4, 5, 6),
-    },
-    userInfoText: {
-      fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Regular,
+    infoValue: {
+      fontSize: responsive.typography.body,
+      fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.text,
       textAlign: isRTL ? "right" : "left",
+      lineHeight: responsive.typography.body * 1.3,
     },
   });
 
@@ -71,35 +95,61 @@ export default function BookingButton({
     <View>
       {/* User Info Display */}
       {userProfile && (
-        <View style={styles.userInfo}>
-          <Text style={styles.userInfoTitle}>{texts.customerInfo}</Text>
-          <View style={styles.userInfoRow}>
-            <Text style={styles.userInfoText}>
-              <Text style={{ fontFamily: fonts.Medium || fonts.SemiBold }}>
-                {texts.name}
-              </Text>{" "}
-              {userProfile.full_name}
-            </Text>
-          </View>
-          <View style={styles.userInfoRow}>
-            <Text style={styles.userInfoText}>
-              <Text style={{ fontFamily: fonts.Medium || fonts.SemiBold }}>
-                {texts.email}
-              </Text>{" "}
-              {userProfile.email}
-            </Text>
-          </View>
-          {userProfile.phone && (
-            <View style={styles.userInfoRow}>
-              <Text style={styles.userInfoText}>
-                <Text style={{ fontFamily: fonts.Medium || fonts.SemiBold }}>
-                  {texts.phone}
-                </Text>{" "}
-                {userProfile.phone}
-              </Text>
+        <Card style={styles.card}>
+          <Card.Header>
+            <Card.Title size="md">{texts.customerInfo}</Card.Title>
+          </Card.Header>
+          <Card.Content>
+            {/* Name */}
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <User
+                  size={responsive.getIconSize("small")}
+                  color={colors.primary}
+                  strokeWidth={2.5}
+                />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>{texts.name}</Text>
+                <Text style={styles.infoValue}>{userProfile.name}</Text>
+              </View>
             </View>
-          )}
-        </View>
+
+            {/* Email */}
+            <View style={styles.infoRow}>
+              <View style={styles.iconContainer}>
+                <Mail
+                  size={responsive.getIconSize("small")}
+                  color={colors.primary}
+                  strokeWidth={2.5}
+                />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>{texts.email}</Text>
+                <Text style={styles.infoValue} numberOfLines={1}>
+                  {userProfile.email}
+                </Text>
+              </View>
+            </View>
+
+            {/* Phone */}
+            {userProfile.phone && (
+              <View style={styles.infoRow}>
+                <View style={styles.iconContainer}>
+                  <Phone
+                    size={responsive.getIconSize("small")}
+                    color={colors.primary}
+                    strokeWidth={2.5}
+                  />
+                </View>
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>{texts.phone}</Text>
+                  <Text style={styles.infoValue}>{userProfile.phone}</Text>
+                </View>
+              </View>
+            )}
+          </Card.Content>
+        </Card>
       )}
 
       {/* Submit Button */}
@@ -107,7 +157,7 @@ export default function BookingButton({
         title={
           loading
             ? texts.processing
-            : `${texts.confirmBooking} - ${totalPrice.toFixed(2)} ${
+            : `${texts.confirmBooking} - ${totalPrice.toLocaleString()} ${
                 texts.riyal
               }`
         }
