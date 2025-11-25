@@ -273,7 +273,7 @@ export default function MyBookingsScreen() {
         },
         listContent: {
           padding: responsive.spacing.md,
-          paddingBottom: responsive.spacing.xl + responsive.safeAreaBottom,
+          paddingBottom: responsive.spacing.xl + responsive.safeAreaBottom + responsive.spacing.md + responsive.spacing.md + responsive.spacing.md,
         },
       }),
     [colors, responsive]

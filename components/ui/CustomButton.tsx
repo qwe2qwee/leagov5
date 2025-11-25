@@ -4,11 +4,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { ButtonProps } from "@/types/AuthTypes";
 import React from "react";
 import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 const CustomButton = ({
@@ -137,7 +137,7 @@ const CustomButton = ({
               <IconLeft />
             </View>
           )}
-          <Text style={styles.text}>{title}</Text>
+          <Text style={[styles.text, textStyle]}>{title}</Text>
           {IconRight && (
             <View style={styles.iconContainer}>
               <IconRight />

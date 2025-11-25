@@ -4,15 +4,15 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Keyboard,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Keyboard,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 // ------------------------------------
@@ -400,8 +400,8 @@ const SignInOTPComponent: React.FC<SignInOTPComponentProps> = ({
       borderRadius: 8,
       fontSize: otpInputSize.fontSize,
       fontFamily: fonts.Bold || "System",
-      color: "#000000",
-      backgroundColor: "#ffffff",
+      color: colors.text,
+      backgroundColor: colors.surface,
       marginHorizontal: isVerySmallScreen ? 2 : isSmallScreen ? 3 : 4,
       textAlign: "center",
     },

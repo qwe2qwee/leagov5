@@ -17,7 +17,7 @@ import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 
 // Components
-import { Card } from "@/components/ui/Card";
+import MainProfileHeader from "@/components/Profile/MainProfileHeader";
 import CustomButton from "@/components/ui/CustomButton";
 import { Separator } from "@/components/ui/Separator";
 import { useAuth } from "@/hooks/supabaseHooks/auth/context";
@@ -42,6 +42,13 @@ const profileSections = {
         titleAr: "المعلومات الشخصية",
         titleEn: "Personal Information",
         route: "/screens/ProfileEdit",
+        requiresAuth: true,
+      },
+      {
+        icon: "calendar-outline",
+        titleAr: "حجوزاتي",
+        titleEn: "My Bookings",
+        route: "/Bills",
         requiresAuth: true,
       },
       {
@@ -107,7 +114,7 @@ const profileSections = {
         requiresAuth: false,
       },
       {
-        icon: "information-circle-outline",
+        icon: "document-text-outline",
         titleAr: "الحقوق والشروط",
         titleEn: "Terms and Conditions",
         route: "/screens/TermsAndConditions",
@@ -137,7 +144,7 @@ const profileSections = {
         requiresAuth: false,
       },
       {
-        icon: "information-circle-outline",
+        icon: "document-text-outline",
         titleAr: "الحقوق والشروط",
         titleEn: "Terms and Conditions",
         route: "/screens/TermsAndConditions",
@@ -163,30 +170,19 @@ const ProfileMenuItem: React.FC<ProfileMenuItemProps> = ({ item, onPress }) => {
     menuItem: {
       flexDirection: isRTL ? "row-reverse" : "row",
       alignItems: "center",
-      // Better phone-focused vertical padding
-      paddingVertical: responsive.getResponsiveValue(10, 12, 14, 16, 18),
-      // More efficient horizontal padding for phone screens
-      paddingHorizontal: responsive.getResponsiveValue(12, 16, 18, 20, 22),
+      paddingVertical: responsive.getResponsiveValue(14, 16, 18, 20, 22),
+      paddingHorizontal: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       backgroundColor: colors.surface,
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      // Reduced bottom margin for better space efficiency
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      borderWidth: 1,
-      borderColor: colors.border,
     },
     iconContainer: {
-      // Optimized icon container size for phones
-      width: responsive.getResponsiveValue(36, 40, 42, 44, 46),
-      height: responsive.getResponsiveValue(36, 40, 42, 44, 46),
-      borderRadius: responsive.getResponsiveValue(18, 20, 21, 22, 23),
+      width: responsive.getResponsiveValue(32, 36, 40, 44, 48),
+      height: responsive.getResponsiveValue(32, 36, 40, 44, 48),
+      borderRadius: responsive.getResponsiveValue(10, 12, 14, 16, 18),
       backgroundColor: colors.backgroundSecondary,
       justifyContent: "center",
       alignItems: "center",
-      // Better spacing for phone layouts
-      marginRight: isRTL
-        ? 0
-        : responsive.getResponsiveValue(10, 12, 14, 16, 18),
-      marginLeft: isRTL ? responsive.getResponsiveValue(10, 12, 14, 16, 18) : 0,
+      marginRight: isRTL ? 0 : responsive.getResponsiveValue(12, 16, 18, 20, 22),
+      marginLeft: isRTL ? responsive.getResponsiveValue(12, 16, 18, 20, 22) : 0,
     },
     textContainer: {
       flex: 1,
@@ -198,7 +194,6 @@ const ProfileMenuItem: React.FC<ProfileMenuItemProps> = ({ item, onPress }) => {
       textAlign: isRTL ? "right" : "left",
     },
     chevron: {
-      // Optimized chevron spacing
       marginLeft: isRTL ? 0 : responsive.getResponsiveValue(6, 8, 10, 12, 14),
       marginRight: isRTL ? responsive.getResponsiveValue(6, 8, 10, 12, 14) : 0,
     },
@@ -213,8 +208,7 @@ const ProfileMenuItem: React.FC<ProfileMenuItemProps> = ({ item, onPress }) => {
       <View style={styles.iconContainer}>
         <Ionicons
           name={item.icon as any}
-          // Better constrained icon size for phones
-          size={responsive.getResponsiveValue(18, 20, 22, 24, 25)}
+          size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
           color={colors.primary}
         />
       </View>
@@ -227,7 +221,6 @@ const ProfileMenuItem: React.FC<ProfileMenuItemProps> = ({ item, onPress }) => {
 
       <Ionicons
         name={isRTL ? "chevron-back" : "chevron-forward"}
-        // Optimized chevron size
         size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
         color={colors.textSecondary}
         style={styles.chevron}
@@ -237,7 +230,7 @@ const ProfileMenuItem: React.FC<ProfileMenuItemProps> = ({ item, onPress }) => {
 };
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const { colors } = useTheme();
   const responsive = useResponsive();
   const fonts = useFontFamily();
@@ -252,10 +245,8 @@ export default function ProfileScreen() {
 
   // Localization
   const t = {
-    profile: currentLanguage === "ar" ? "الملف الشخصي" : "Profile",
     account: currentLanguage === "ar" ? "الحساب" : "Account",
     general: currentLanguage === "ar" ? "عام" : "General",
-    signIn: currentLanguage === "ar" ? "تسجيل الدخول" : "Sign In",
     signOut: currentLanguage === "ar" ? "تسجيل الخروج" : "Sign Out",
     logoutQuestion:
       currentLanguage === "ar"
@@ -273,11 +264,6 @@ export default function ProfileScreen() {
       currentLanguage === "ar"
         ? "حدث خطأ في تسجيل الخروج"
         : "Error signing out",
-    welcomeGuest: currentLanguage === "ar" ? "مرحباً بك" : "Welcome ",
-    signInToAccess:
-      currentLanguage === "ar"
-        ? "قم بتسجيل الدخول للوصول إلى جميع الميزات"
-        : "Sign in to access all features",
   };
 
   const handleMenuItemPress = (route: any): void => {
@@ -311,10 +297,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSignInPress = (): void => {
-    replace("/(auth)/sign-in");
-  };
-
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -322,62 +304,28 @@ export default function ProfileScreen() {
     },
     content: {
       flex: 1,
-      // More efficient horizontal padding for phone screens
-      paddingHorizontal: responsive.getResponsiveValue(14, 16, 18, 20, 22),
-      paddingTop:
-        responsive.safeAreaTop +
-        responsive.getResponsiveValue(12, 16, 18, 20, 22),
-    },
-    header: {
-      // Optimized header margin for better space usage
-      marginBottom: responsive.getResponsiveValue(18, 20, 24, 26, 28),
-    },
-    title: {
-      fontSize: responsive.getFontSize(24, 22, 28),
-      fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-      color: colors.text,
-      textAlign: isRTL ? "right" : "left",
-      // Reduced title bottom margin
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
     },
     sectionContainer: {
-      // Better section spacing for phones
-      marginBottom: responsive.getResponsiveValue(18, 20, 24, 26, 28),
+      marginBottom: responsive.getResponsiveValue(20, 24, 28, 32, 36),
     },
     sectionTitle: {
       fontSize: responsive.getFontSize(16, 15, 18),
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.textSecondary,
       textAlign: isRTL ? "right" : "left",
-      // Optimized section title margin
-      marginBottom: responsive.getResponsiveValue(10, 12, 14, 16, 18),
-      paddingHorizontal: responsive.getResponsiveValue(2, 4, 6, 8, 10),
+      marginBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      paddingHorizontal: responsive.getResponsiveValue(20, 24, 28, 32, 36),
+    },
+    menuList: {
+      backgroundColor: colors.surface,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: colors.borderLight,
     },
     signOutButton: {
-      // Better button margins for phone layouts
-      marginTop: responsive.getResponsiveValue(12, 16, 18, 20, 22),
-      marginBottom: responsive.getResponsiveValue(16, 20, 22, 24, 26),
-    },
-    guestCard: {
-      alignItems: "center",
-      // Optimized guest card padding
-      padding: responsive.getResponsiveValue(20, 24, 26, 28, 30),
-      marginBottom: responsive.getResponsiveValue(18, 20, 24, 26, 28),
-    },
-    guestTitle: {
-      fontSize: responsive.getFontSize(18, 17, 20),
-      fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
-      color: colors.text,
-      textAlign: "center",
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-    },
-    guestSubtitle: {
-      fontSize: responsive.getFontSize(14, 13, 16),
-      fontFamily: fonts.Regular,
-      color: colors.textSecondary,
-      textAlign: "center",
-      // Better subtitle margin
-      marginBottom: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      marginHorizontal: responsive.getResponsiveValue(20, 24, 28, 32, 36),
+      marginTop: responsive.getResponsiveValue(10, 12, 14, 16, 18),
+      marginBottom: responsive.getResponsiveValue(30, 36, 40, 44, 48),
     },
     modalOverlay: {
       flex: 1,
@@ -385,16 +333,11 @@ export default function ProfileScreen() {
       alignItems: "center",
       margin: 0,
     },
-    card: {
-      paddingVertical: responsive.getResponsiveValue(20, 24, 26, 28, 30),
-    },
     modalContent: {
       backgroundColor: colors.surface,
       borderRadius: responsive.getResponsiveValue(14, 16, 18, 20, 22),
-      // Better modal padding for phone screens
       padding: responsive.getResponsiveValue(20, 24, 26, 28, 30),
       marginHorizontal: responsive.getResponsiveValue(16, 20, 22, 24, 26),
-      // Optimized modal width for phones
       maxWidth: responsive.getResponsiveValue(280, 300, 320, 340, 360),
       width: "100%",
     },
@@ -403,17 +346,14 @@ export default function ProfileScreen() {
       fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
       color: colors.text,
       textAlign: "center",
-      // Better modal title margin
       marginBottom: responsive.getResponsiveValue(18, 20, 22, 24, 26),
       lineHeight: responsive.getFontSize(17, 16, 19) * 1.4,
     },
     modalButtons: {
-      // Optimized button gap
       gap: responsive.getResponsiveValue(10, 12, 14, 16, 18),
     },
     cancelButton: {
       alignItems: "center",
-      // Better cancel button padding
       paddingVertical: responsive.getResponsiveValue(10, 12, 14, 16, 18),
     },
     cancelText: {
@@ -422,7 +362,7 @@ export default function ProfileScreen() {
       color: colors.primary,
     },
     bottomSpacing: {
-      height: responsive.safeAreaBottom + responsive.getTabBarHeight(true) + 60,
+      height: responsive.safeAreaBottom + responsive.getTabBarHeight(true) + 20,
     },
   });
 
@@ -432,107 +372,65 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {user ? (
-          <>
-            {/* Account Section */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>{t.account}</Text>
-              <Card type="default" style={styles.card}>
-                <Card.Content>
-                  {accountSections.map((item, index) => (
-                    <React.Fragment key={item.route}>
-                      <ProfileMenuItem
-                        item={item}
-                        onPress={handleMenuItemPress}
-                      />
-                      {index < accountSections.length - 1 && <Separator />}
-                    </React.Fragment>
-                  ))}
-                </Card.Content>
-              </Card>
-            </View>
+        {/* Main Header */}
+        <MainProfileHeader
+          user={user}
+          profile={profile}
+          onSignInPress={() => replace("/(auth)/sign-in")}
+          onEditProfilePress={() => push("/screens/ProfileEdit")}
+        />
 
-            {/* General Section */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>{t.general}</Text>
-              <Card type="default" style={styles.card}>
-                <Card.Content>
-                  {generalSections.map((item, index) => (
-                    <React.Fragment key={item.route}>
-                      <ProfileMenuItem
-                        item={item}
-                        onPress={handleMenuItemPress}
-                      />
-                      {index < generalSections.length - 1 && <Separator />}
-                    </React.Fragment>
-                  ))}
-                </Card.Content>
-              </Card>
+        {/* Account Section - Only if logged in */}
+        {user && (
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>{t.account}</Text>
+            <View style={styles.menuList}>
+              {accountSections.map((item, index) => (
+                <React.Fragment key={item.route}>
+                  <ProfileMenuItem item={item} onPress={handleMenuItemPress} />
+                  {index < accountSections.length - 1 && (
+                    <Separator style={{ marginLeft: 68 }} />
+                  )}
+                </React.Fragment>
+              ))}
             </View>
+          </View>
+        )}
 
-            {/* Sign Out Button */}
-            <View style={styles.signOutButton}>
-              <CustomButton
-                title={t.signOut}
-                bgVariant="outline"
-                textVariant="primary"
-                onPress={handleSignOutPress}
-                IconLeft={() => (
-                  <Ionicons
-                    name="log-out-outline"
-                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                    color={colors.error}
-                  />
-                )}
-              />
-            </View>
-          </>
-        ) : (
-          <>
-            {/* Guest Card */}
-            <Card
-              type="default"
-              style={{
-                ...styles.card,
-                padding: responsive.getResponsiveValue(24, 28, 30, 32, 34),
-              }}
-            >
-              <Text style={styles.guestTitle}>{t.welcomeGuest}</Text>
-              <Text style={styles.guestSubtitle}>{t.signInToAccess}</Text>
-              <CustomButton
-                title={t.signIn}
-                bgVariant="primary"
-                onPress={handleSignInPress}
-                IconLeft={() => (
-                  <Ionicons
-                    name="log-in-outline"
-                    size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                    color={colors.textInverse}
-                  />
-                )}
-              />
-            </Card>
+        {/* General Section */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>{t.general}</Text>
+          <View style={styles.menuList}>
+            {generalSections
+              .filter((item) => (user ? true : !item.requiresAuth))
+              .map((item, index, filteredArray) => (
+                <React.Fragment key={item.route}>
+                  <ProfileMenuItem item={item} onPress={handleMenuItemPress} />
+                  {index < filteredArray.length - 1 && (
+                    <Separator style={{ marginLeft: 68 }} />
+                  )}
+                </React.Fragment>
+              ))}
+          </View>
+        </View>
 
-            {/* General Section for Guests */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>{t.general}</Text>
-              <Card type="default" style={styles.card}>
-                <Card.Content>
-                  {generalSections
-                    .filter((item) => !item.requiresAuth)
-                    .map((item, index, filteredArray) => (
-                      <React.Fragment key={item.route}>
-                        <ProfileMenuItem
-                          item={item}
-                          onPress={handleMenuItemPress}
-                        />
-                        {index < filteredArray.length - 1 && <Separator />}
-                      </React.Fragment>
-                    ))}
-                </Card.Content>
-              </Card>
-            </View>
-          </>
+        {/* Sign Out Button */}
+        {user && (
+          <View style={styles.signOutButton}>
+            <CustomButton
+              title={t.signOut}
+              bgVariant="outline"
+              textStyle={{ color: colors.error }}
+              onPress={handleSignOutPress}
+              IconLeft={() => (
+                <Ionicons
+                  name="log-out-outline"
+                  size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
+                  color={colors.error}
+                />
+              )}
+            />
+          </View>
         )}
 
         {/* Bottom spacing */}

@@ -6,7 +6,7 @@ export declare interface ButtonProps extends TouchableOpacityProps {
   textVariant?: "primary" | "default" | "secondary" | "danger" | "success";
   IconLeft?: React.ComponentType<any>;
   IconRight?: React.ComponentType<any>;
-  textStyle?: string;
+  textStyle?: any;
   loading?: boolean;
 }
 
@@ -156,21 +156,22 @@ type CreateUserProfileFunction = (user: User) => Promise<void>;
 
 // Export all types
 export type {
-  AdminSessionResponse,
-  AuthOperationResult,
-  AuthPurpose,
-  CreateUserProfileFunction,
-  EdgeFunctionResponse,
-  EdgeFunctionVerifyRequest,
-  MagicLinkResponse,
-  OtpType,
-  PhoneNormalizerFunction,
-  PhoneValidationResult,
-  Session,
-  SupabaseAuthResponse,
-  User,
-  VerifyOTPErrorResponse,
-  VerifyOTPFunction,
-  VerifyOtpRequestFunction,
-  VerifyOTPSuccessResponse,
+    AdminSessionResponse,
+    AuthOperationResult,
+    AuthPurpose,
+    CreateUserProfileFunction,
+    EdgeFunctionResponse,
+    EdgeFunctionVerifyRequest,
+    MagicLinkResponse,
+    OtpType,
+    PhoneNormalizerFunction,
+    PhoneValidationResult,
+    Session,
+    SupabaseAuthResponse,
+    User,
+    VerifyOTPErrorResponse,
+    VerifyOTPFunction,
+    VerifyOtpRequestFunction,
+    VerifyOTPSuccessResponse
 };
+
