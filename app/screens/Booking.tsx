@@ -1,4 +1,4 @@
-// screens/BookingScreen.tsx
+// screens/BookingScreen.tsx (المحدثة)
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,14 +12,13 @@ import {
 } from "react-native";
 
 // Components
-import BookingButton from "@/components/booking/BookingButton";
+import BookingAvailabilityIndicator from "@/components/booking/BookingAvailabilityIndicator";
+import BookingButtonSection from "@/components/booking/BookingButtonSection";
 import BookingCalendarModal from "@/components/booking/BookingCalendarModal";
-import BookingCarInfo from "@/components/booking/BookingCarInfo";
-import BookingForm from "@/components/booking/BookingForm";
-import BookingSummary from "@/components/booking/BookingSummary";
-import { Card } from "@/components/ui/Card";
-import CustomButton from "@/components/ui/CustomButton";
-import ScreenHeader from "@/components/ui/ScreenHeader";
+import BookingCarSection from "@/components/booking/BookingCarSection";
+import BookingFormSection from "@/components/booking/BookingFormSection";
+import BookingHeader from "@/components/booking/BookingHeader";
+import BookingSummarySection from "@/components/booking/BookingSummarySection";
 
 // Hooks
 import {
@@ -33,12 +32,11 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 
 // Utils
+import CustomButton from "@/components/ui/CustomButton";
 import { supabase } from "@/lib/supabase";
 import useLanguageStore from "@/store/useLanguageStore";
 
-// ============================================
 // Types
-// ============================================
 interface BookingFormData {
   startDate: string;
   endDate: string;
@@ -55,9 +53,6 @@ interface CalendarDate {
   timestamp: number;
 }
 
-// ============================================
-// BookingScreen Component
-// ============================================
 const BookingScreen: React.FC = () => {
   const { carId } = useLocalSearchParams<{ carId?: string }>();
   const router = useRouter();
@@ -66,35 +61,27 @@ const BookingScreen: React.FC = () => {
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
 
-  // ============================================
   // State
-  // ============================================
   const [formData, setFormData] = useState<BookingFormData>({
     startDate: "",
     endDate: "",
-    rentalType: "monthly", // ✅ افتراضي: شهري (الأكثر شيوعاً)
+    rentalType: "monthly",
     duration: 1,
   });
 
   const [showCalendar, setShowCalendar] = useState(false);
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
 
-  // ============================================
-  // Data Hooks (من الداتابيس)
-  // ============================================
-
-  // 1. جلب السيارة
+  // Data Hooks
   const {
     data: car,
     isLoading: isLoadingCar,
     error: carError,
   } = useCarForBooking(carId);
 
-  // 2. التحقق من أهلية المستخدم
   const { data: eligibility, isLoading: isLoadingEligibility } =
     useUserEligibility();
 
-  // 3. حساب السعر المتوقع
   const { data: pricePreview, isLoading: isLoadingPrice } = usePricePreview(
     car?.car_id,
     formData.rentalType,
@@ -103,7 +90,6 @@ const BookingScreen: React.FC = () => {
     !!(formData.startDate && formData.endDate)
   );
 
-  // 4. التحقق من التوفر
   const { data: availability, isLoading: isCheckingAvailability } =
     useBookingAvailability(
       car?.car_id,
@@ -565,9 +551,7 @@ const BookingScreen: React.FC = () => {
     },
   });
 
-  // ============================================
-  // Render Loading
-  // ============================================
+  // Render Loading (نفسه)
   if (isLoadingCar || isLoadingEligibility) {
     return (
       <View style={styles.loadingContainer}>
@@ -591,7 +575,7 @@ const BookingScreen: React.FC = () => {
     return (
       <View style={styles.loadingContainer}>
         <Ionicons
-          name="lock-closed"
+          name="accessibility-outline"
           size={64}
           color={colors.warning}
           style={styles.errorIcon}
@@ -614,11 +598,22 @@ const BookingScreen: React.FC = () => {
               bgVariant="primary"
             />
           )}
-          <CustomButton
-            title={t.back}
-            onPress={() => router.back()}
-            bgVariant="outline"
-          />
+
+          {eligibility.reason_code === "NOT_AUTHENTICATED" && (
+            <CustomButton
+              title={t.notEligible}
+              onPress={() => router.replace("/(auth)/sign-in")}
+              bgVariant="primary"
+            />
+          )}
+          {eligibility.reason_code !== "NOT_AUTHENTICATED" &&
+            eligibility.reason_code !== "DOCUMENTS_REQUIRED" && (
+              <CustomButton
+                title={t.backToSearch}
+                onPress={() => router.replace("/(tabs)/Cars")}
+                bgVariant="primary"
+              />
+            )}
         </View>
       </View>
     );
@@ -690,7 +685,7 @@ const BookingScreen: React.FC = () => {
   // ============================================
   if (eligibility && !eligibility.is_eligible) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer]}>
         <Ionicons
           name="lock-closed"
           size={64}
@@ -698,11 +693,7 @@ const BookingScreen: React.FC = () => {
           style={styles.errorIcon}
         />
         <Text style={styles.loadingText}>{t.notEligible}</Text>
-        <Text style={styles.loadingSubtext}>
-          {currentLanguage === "ar"
-            ? eligibility.reason_message_ar
-            : eligibility.reason_message_en}
-        </Text>
+
         <View style={styles.buttonContainer}>
           <CustomButton
             title={t.back}
@@ -714,9 +705,7 @@ const BookingScreen: React.FC = () => {
     );
   }
 
-  // ============================================
   // Render Main Content
-  // ============================================
   return (
     <View style={styles.container}>
       <ScrollView
@@ -725,10 +714,10 @@ const BookingScreen: React.FC = () => {
         contentContainerStyle={{ paddingBottom: 20 }}
       >
         {/* Header */}
-        <ScreenHeader title={t.title} onBack={() => router.back()} />
+        <BookingHeader title={t.title} onBack={() => router.back()} />
 
         {/* Car Info */}
-        <BookingCarInfo
+        <BookingCarSection
           car={{
             car_id: car.car_id,
             brand_name_ar: car.brand.name_ar,
@@ -754,151 +743,95 @@ const BookingScreen: React.FC = () => {
           riyalLabel={t.riyal}
         />
 
-        {/* Booking Form */}
-        <Card style={styles.cardContainer}>
-          <Card.Header>
-            <Card.Title size="md">{t.bookingData}</Card.Title>
-          </Card.Header>
-          <Card.Content>
-            <BookingForm
-              formData={formData}
-              onFormDataChange={handleFormDataChange}
-              onOpenCalendar={() => setShowCalendar(true)}
-              availableRentalTypes={availableRentalTypes}
-              prices={{
-                daily: car.daily_price,
-                weekly: car.weekly_price || 0,
-                monthly: car.monthly_price || 0,
-              }}
-              texts={{
-                rentalType: t.rentalType,
-                duration: t.duration,
-                rentalDate: t.rentalDate,
-                startDate: t.startDate,
-                selectRentalType: t.selectRentalType,
-                selectWeeks: t.selectWeeks,
-                selectMonths: t.selectMonths,
-                tapToSelectDate: t.tapToSelectDate,
-                totalPrice: t.totalAmount,
-              }}
-            />
+        {/* Booking Form Section */}
+        <BookingFormSection
+          formData={formData}
+          onFormDataChange={handleFormDataChange}
+          onOpenCalendar={() => setShowCalendar(true)}
+          availableRentalTypes={availableRentalTypes}
+          prices={{
+            daily: car.daily_price,
+            weekly: car.weekly_price || 0,
+            monthly: car.monthly_price || 0,
+          }}
+          cardTitle={t.bookingData}
+          texts={{
+            rentalType: t.rentalType,
+            duration: t.duration,
+            rentalDate: t.rentalDate,
+            startDate: t.startDate,
+            selectRentalType: t.selectRentalType,
+            selectWeeks: t.selectWeeks,
+            selectMonths: t.selectMonths,
+            tapToSelectDate: t.tapToSelectDate,
+            totalPrice: t.totalAmount,
+          }}
+        />
 
-            {/* Availability Indicator */}
-            {formData.startDate && formData.endDate && (
-              <View
-                style={[
-                  styles.availabilityContainer,
-                  isCheckingAvailability
-                    ? styles.availabilityChecking
-                    : availability?.isAvailable === true
-                    ? styles.availabilityAvailable
-                    : availability?.isAvailable === false
-                    ? styles.availabilityNotAvailable
-                    : styles.availabilityChecking,
-                ]}
-              >
-                {isCheckingAvailability ? (
-                  <>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                    <Text
-                      style={[
-                        styles.availabilityText,
-                        styles.availabilityTextChecking,
-                      ]}
-                    >
-                      {t.checkingAvailability}
-                    </Text>
-                  </>
-                ) : availability?.isAvailable === true ? (
-                  <>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={24}
-                      color={colors.success}
-                    />
-                    <Text
-                      style={[
-                        styles.availabilityText,
-                        styles.availabilityTextAvailable,
-                      ]}
-                    >
-                      {availability.message}
-                    </Text>
-                  </>
-                ) : availability?.isAvailable === false ? (
-                  <>
-                    <Ionicons
-                      name="close-circle"
-                      size={24}
-                      color={colors.error}
-                    />
-                    <Text
-                      style={[
-                        styles.availabilityText,
-                        styles.availabilityTextNotAvailable,
-                      ]}
-                    >
-                      {availability.message}
-                    </Text>
-                  </>
-                ) : null}
-              </View>
-            )}
+        {/* Availability Indicator */}
+        <BookingAvailabilityIndicator
+          availability={
+            availability
+              ? {
+                  ...availability,
+                  // convert nulls to undefined so isAvailable fits boolean | undefined
+                  isAvailable: availability.isAvailable ?? undefined,
+                  message: availability.message ?? undefined,
+                }
+              : null
+          }
+          isCheckingAvailability={isCheckingAvailability}
+          startDate={formData.startDate}
+          endDate={formData.endDate}
+          checkingText={t.checkingAvailability}
+        />
 
-            {/* Price Summary */}
-            {pricePreview && (
-              <BookingSummary
-                dailyPrice={pricePreview.price_per_unit}
-                actualDays={pricePreview.total_days}
-                bestOffer={{
-                  offer_source: "direct_discount",
-                  offer_id: null,
-                  offer_name_ar: null,
-                  offer_name_en: null,
-                  discount_type: "percentage",
-                  discount_value: pricePreview.discount_percentage,
-                  original_price: pricePreview.total_amount,
-                  discounted_price: pricePreview.final_price,
-                  savings_amount: pricePreview.discount_amount,
-                }}
-                texts={{
-                  dailyPrice: t.dailyPrice,
-                  numberOfDays: t.numberOfDays,
-                  originalPrice: t.originalPrice,
-                  totalAmount: t.totalAmount,
-                  saved: t.saved,
-                  days: t.days,
-                  riyal: t.riyal,
-                }}
-              />
-            )}
+        {/* Price Summary */}
+        <BookingSummarySection
+          pricePreview={pricePreview}
+          texts={{
+            dailyPrice: t.dailyPrice,
+            numberOfDays: t.numberOfDays,
+            originalPrice: t.originalPrice,
+            totalAmount: t.totalAmount,
+            saved: t.saved,
+            days: t.days,
+            riyal: t.riyal,
+          }}
+        />
 
-            {/* Booking Button */}
-            <BookingButton
-              loading={isCreatingBooking || isLoadingPrice}
-              disabled={
-                isCreatingBooking ||
-                isLoadingPrice ||
-                !pricePreview ||
-                !formData.startDate ||
-                availability?.isAvailable === false ||
-                isCheckingAvailability
-              }
-              onSubmit={handleSubmit}
-              userProfile={eligibility?.user_profile || null}
-              totalPrice={pricePreview?.final_price || 0}
-              texts={{
-                processing: isCreatingBooking ? t.processing : t.confirmBooking,
-                confirmBooking: t.confirmBooking,
-                riyal: t.riyal,
-                customerInfo: t.customerInfo,
-                name: t.name,
-                email: t.email,
-                phone: t.phone,
-              }}
-            />
-          </Card.Content>
-        </Card>
+        {/* Booking Button */}
+        <BookingButtonSection
+          loading={isCreatingBooking || isLoadingPrice}
+          disabled={
+            isCreatingBooking ||
+            isLoadingPrice ||
+            !pricePreview ||
+            !formData.startDate ||
+            availability?.isAvailable === false ||
+            isCheckingAvailability
+          }
+          onSubmit={handleSubmit}
+          userProfile={
+            eligibility?.user_profile
+              ? {
+                  name: eligibility.user_profile.full_name,
+                  email: eligibility.user_profile.email,
+                  phone: eligibility.user_profile.phone ?? "",
+                }
+              : null
+          }
+          totalPrice={pricePreview?.final_price || 0}
+          texts={{
+            processing: isCreatingBooking ? t.processing : t.confirmBooking,
+            confirmBooking: t.confirmBooking,
+            riyal: t.riyal,
+            customerInfo: t.customerInfo,
+            name: t.name,
+            email: t.email,
+            phone: t.phone,
+          }}
+        />
       </ScrollView>
 
       {/* Calendar Modal */}

@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
 import useLanguageStore from "@/store/useLanguageStore";
 import * as ImagePicker from "expo-image-picker";
+import { push } from "expo-router/build/global-state/routing";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -353,6 +354,7 @@ const DocumentUploadScreen: React.FC = () => {
       Alert.alert(t.error, t.uploadError);
     } finally {
       setUploading(false);
+      push("/(tabs)");
     }
   };
 

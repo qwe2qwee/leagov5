@@ -100,7 +100,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b4cd9731-6fc4-48a2-8321-5216ef8499a6"
+        "projectId": "a23a123d-b29d-41ca-8b04-e75d523b4f6b"
       },
       "EXPO_PUBLIC_SUPABASE_URL": "https://gtmqrjdqomovbkdabvqb.supabase.co",
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0bXFyamRxb21vdmJrZGFidnFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMTcxOTIsImV4cCI6MjA3Njg5MzE5Mn0.FBtj5W24t4BjKSRsQT6Z81JaQY1CUb8DggG_I6aDmoE",
