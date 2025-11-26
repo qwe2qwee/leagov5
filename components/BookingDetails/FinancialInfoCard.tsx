@@ -1,9 +1,10 @@
+import { icons } from "@/constants";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 
 interface FinancialInfoCardProps {
   rentalType: "daily" | "weekly" | "monthly" | "ownership";
@@ -40,7 +41,6 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
     subtotal: currentLanguage === "ar" ? "المجموع الفرعي" : "Subtotal",
     discount: currentLanguage === "ar" ? "خصم العرض" : "Offer Discount",
     finalAmount: currentLanguage === "ar" ? "المبلغ النهائي" : "Final Amount",
-    sar: currentLanguage === "ar" ? "ر.س" : "SAR",
     ownershipNote:
       currentLanguage === "ar"
         ? "* سعر التمليك ثابت بدون خصومات"
@@ -109,6 +109,11 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
       fontFamily: fonts.SemiBold,
       color: colors.primary,
     },
+    rateValueContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
     rateValue: {
       fontSize: responsive.getFontSize(16, 15, 18),
       fontFamily: fonts.Bold,
@@ -130,6 +135,11 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
       fontSize: responsive.getFontSize(14, 15, 16),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
+    },
+    valueContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
     },
     value: {
       fontSize: responsive.getFontSize(14, 15, 16),
@@ -157,6 +167,11 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
       fontSize: responsive.getFontSize(11, 10, 12),
       fontFamily: fonts.Bold,
       color: colors.success,
+    },
+    strikethroughContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
     },
     strikethrough: {
       fontSize: responsive.getFontSize(13, 12, 14),
@@ -191,7 +206,32 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
       marginTop: responsive.getResponsiveValue(8, 10, 12, 14, 16),
       fontStyle: "italic",
     },
+    icon: {
+      width: responsive.getFontSize(14),
+      height: responsive.getFontSize(14),
+    },
+    totalIcon: {
+      width: responsive.getFontSize(18),
+      height: responsive.getFontSize(18),
+    },
   });
+
+  const CurrencyIcon = ({
+    color,
+    size = "normal",
+  }: {
+    color: string;
+    size?: "normal" | "large";
+  }) => (
+    <Image
+      source={icons.riyalsymbol}
+      style={[
+        size === "large" ? styles.totalIcon : styles.icon,
+        { tintColor: color },
+      ]}
+      resizeMode="contain"
+    />
+  );
 
   return (
     <View style={styles.card}>
@@ -207,9 +247,10 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
             <Text style={styles.rateNote}>{t.priceAfterDiscount}</Text>
           )}
         </View>
-        <Text style={styles.rateValue}>
-          {dailyRate.toFixed(2)} {t.sar}
-        </Text>
+        <View style={styles.rateValueContainer}>
+          <Text style={styles.rateValue}>{dailyRate.toFixed(2)}</Text>
+          <CurrencyIcon color={colors.primary} />
+        </View>
       </View>
 
       {/* Details */}
@@ -217,51 +258,61 @@ const FinancialInfoCard: React.FC<FinancialInfoCardProps> = ({
         <>
           <View style={styles.discountDetailRow}>
             <View style={styles.discountLeft}>
-              <Text style={styles.strikethrough}>
-                {originalRate.toFixed(2)} {t.sar}
-              </Text>
+              <View style={styles.strikethroughContainer}>
+                <Text style={styles.strikethrough}>
+                  {originalRate.toFixed(2)}
+                </Text>
+                <CurrencyIcon color={colors.textSecondary} />
+              </View>
               <View style={styles.discountBadge}>
                 <Text style={styles.discountBadgeText}>
                   -{carDiscountPercentage}%
                 </Text>
               </View>
             </View>
-            <Text style={styles.value}>
-              {dailyRate.toFixed(2)} {t.sar}
-            </Text>
+            <View style={styles.valueContainer}>
+              <Text style={styles.value}>{dailyRate.toFixed(2)}</Text>
+              <CurrencyIcon color={colors.text} />
+            </View>
           </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>{t.subtotal}</Text>
-            <Text style={styles.value}>
-              {totalAmount.toFixed(2)} {t.sar}
-            </Text>
+            <View style={styles.valueContainer}>
+              <Text style={styles.value}>{totalAmount.toFixed(2)}</Text>
+              <CurrencyIcon color={colors.text} />
+            </View>
           </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>
               {t.discount} ({carDiscountPercentage}%)
             </Text>
-            <Text style={[styles.value, { color: colors.success }]}>
-              -{discountAmount.toFixed(2)} {t.sar}
-            </Text>
+            <View style={styles.valueContainer}>
+              <Text style={[styles.value, { color: colors.success }]}>
+                -{discountAmount.toFixed(2)}
+              </Text>
+              <CurrencyIcon color={colors.success} />
+            </View>
           </View>
         </>
       ) : (
         <View style={styles.row}>
           <Text style={styles.label}>{t.subtotal}</Text>
-          <Text style={styles.value}>
-            {totalAmount.toFixed(2)} {t.sar}
-          </Text>
+          <View style={styles.valueContainer}>
+            <Text style={styles.value}>{totalAmount.toFixed(2)}</Text>
+            <CurrencyIcon color={colors.text} />
+          </View>
         </View>
       )}
 
       {/* Total */}
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>{t.finalAmount}</Text>
-        <Text style={styles.totalValue}>
-          {finalAmount.toFixed(2)} {t.sar}
-        </Text>
+        <View style={styles.valueContainer}>
+          <Text style={styles.totalValue}>{finalAmount.toFixed(2)}</Text>
+          <CurrencyIcon color={colors.primary} size="large" />
+        </View>
       </View>
 
       {/* Ownership Note */}
