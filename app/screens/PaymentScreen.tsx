@@ -1,17 +1,12 @@
-import AcceptedCards from "@/components/Payment/AcceptedCards";
-import BookingSummary from "@/components/Payment/BookingSummary";
-import CardForm from "@/components/Payment/CardForm";
+
 import Header from "@/components/Payment/Header";
-import SecurityInfo from "@/components/Payment/SecurityInfo";
+import PaymentFormCard from "@/components/Payment/PaymentFormCard";
+import PaymentSummaryCard from "@/components/Payment/PaymentSummaryCard";
 import StatusBanner from "@/components/Payment/StatusBanner";
 import Timer from "@/components/Payment/Timer";
 import WebViewModal from "@/components/Payment/WebViewModal";
 import CustomButton from "@/components/ui/CustomButton";
-import {
-  useBookingDetails,
-  useBookingTimer,
-  usePayment,
-} from "@/hooks/booking/useUserBookings";
+import { useBookingDetails, useBookingTimer, usePayment } from "@/hooks/booking/useUserBookings";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
@@ -74,7 +69,7 @@ export default function PaymentScreen() {
 
   const t = {
     title: currentLanguage === "ar" ? "إتمام الدفع" : "Complete Payment",
-    pay: currentLanguage === "ar" ? "ادفع" : "Pay",
+    pay: currentLanguage === "ar" ? "دفع" : "Pay",
     sar: currentLanguage === "ar" ? "ر.س" : "SAR",
     invalidData:
       currentLanguage === "ar"
@@ -358,11 +353,24 @@ export default function PaymentScreen() {
       textAlign: "center",
     },
     scrollContent: {
-      paddingBottom: responsive.getResponsiveValue(24, 28, 32, 36, 40),
+      padding: responsive.spacing.md,
+      paddingBottom: responsive.getResponsiveValue(80, 90, 100, 110, 120),
     },
     buttonContainer: {
-      marginHorizontal: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-      marginTop: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: colors.surface,
+      padding: responsive.spacing.md,
+      paddingBottom: responsive.safeAreaBottom + responsive.spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 5,
     },
   });
 
@@ -419,6 +427,7 @@ export default function PaymentScreen() {
         <ScrollView
           style={styles.container}
           contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
           <StatusBanner status={booking.status} />
           <Timer
@@ -427,7 +436,7 @@ export default function PaymentScreen() {
             formattedTime={formattedTime || ""}
           />
 
-          <BookingSummary
+          <PaymentSummaryCard
             carName={carName}
             imageUrl={booking.car?.model?.default_image_url}
             startDate={booking.start_date}
@@ -438,9 +447,7 @@ export default function PaymentScreen() {
             finalAmount={booking.final_amount}
           />
 
-          <AcceptedCards />
-
-          <CardForm
+          <PaymentFormCard
             cardNumber={cardNumber}
             setCardNumber={setCardNumber}
             cardName={cardName}
@@ -455,23 +462,21 @@ export default function PaymentScreen() {
             setErrors={setErrors}
             isDisabled={isPaymentLoading || isCreatingToken}
           />
-
-          <View style={styles.buttonContainer}>
-            <CustomButton
-              title={
-                isCreatingToken
-                  ? t.creatingToken
-                  : `${t.pay} ${booking.final_amount} ${t.sar}`
-              }
-              bgVariant="success"
-              onPress={handlePayment}
-              loading={isPaymentLoading || isCreatingToken}
-              disabled={isPaymentLoading || isCreatingToken || isExpired}
-            />
-          </View>
-
-          <SecurityInfo />
         </ScrollView>
+
+        <View style={styles.buttonContainer}>
+          <CustomButton
+            title={
+              isCreatingToken
+                ? t.creatingToken
+                : `${t.pay} ${booking.final_amount} ${t.sar}`
+            }
+            bgVariant="success"
+            onPress={handlePayment}
+            loading={isPaymentLoading || isCreatingToken}
+            disabled={isPaymentLoading || isCreatingToken || isExpired}
+          />
+        </View>
       </KeyboardAvoidingView>
 
       <WebViewModal

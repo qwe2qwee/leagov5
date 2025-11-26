@@ -10,25 +10,25 @@ import TimerAlert from "@/components/BookingDetails/TimerAlert";
 import { BOOKING_DETAILS_STATUS_CONFIG } from "@/components/Bookings/types";
 import CustomButton from "@/components/ui/CustomButton";
 import {
-    useBookingDetails,
-    useBookingRealtime,
-    useBookingTimer,
-    useCancelBooking,
+  useBookingDetails,
+  useBookingRealtime,
+  useBookingTimer,
+  useCancelBooking,
 } from "@/hooks/booking/useUserBookings";
 import { useFontFamily } from "@/hooks/useFontFamily";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useToast } from "@/store/useToastStore";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-    ActivityIndicator,
-    Linking,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 export default function BookingDetailsScreen() {
@@ -55,6 +55,12 @@ export default function BookingDetailsScreen() {
   const { cancelBooking, isLoading: isCancelling } = useCancelBooking();
   const { formattedTime, isExpired, hoursLeft } = useBookingTimer(
     booking?.expires_at
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
   );
 
   useBookingRealtime(() => {
