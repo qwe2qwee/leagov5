@@ -14,8 +14,8 @@ export const transformCarData = (car: any) => ({
   images:
     car.additional_images?.length > 0
       ? car.additional_images
-      : car.main_image_url
-      ? [car.main_image_url]
+      : car.main_image_url || car.default_image_url
+      ? [car.main_image_url || car.default_image_url]
       : [
           "https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=400&h=300&fit=crop",
         ],

@@ -31,33 +31,39 @@ interface NearestCarResult {
 
 export interface SearchResult {
   id: string;
-  brand_name_ar: string;
-  brand_name_en: string;
-  model_name_ar: string;
   model_name_en: string;
-  model_year: number;
-  main_image_url: string;
-  color_name_ar: string;
+  model_name_ar: string;
+  brand_name_en: string;
+  brand_name_ar: string;
+  branch_name_en: string;
+  branch_name_ar: string;
   color_name_en: string;
+  color_name_ar: string;
+  default_image_url: string;
+  year: number;
+  branch_id: string;
   daily_price: number;
   weekly_price: number | null;
   monthly_price: number | null;
-  seats: number;
-  fuel_type: string;
-  transmission: string;
-  branch_name_ar: string;
-  branch_name_en: string;
-  branch_id: string;
-  distance_km: number | null;
-  is_new: boolean;
   discount_percentage: number;
+  offer_expires_at: string | null;
+  is_new: boolean;
+  mileage: number;
   status: string;
-  actual_available_quantity: number;
+  transmission: string;
+  fuel_type: string;
+  seats: number;
+  available_quantity: number;
   features_ar: string[];
   features_en: string[];
+  rental_types: string[];
   relevance_score: number;
   total_results: number;
 }
+
+// ... (rest of the file)
+
+
 
 interface Suggestion {
   suggestion: string;
