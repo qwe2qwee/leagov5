@@ -1,7 +1,6 @@
-import { Card } from "@/components/ui/Card";
 import { useResponsive } from "@/hooks/useResponsive";
 import React from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import DocumentCard from "./DocumentCard";
 import DocumentEmptyState from "./DocumentEmptyState";
 
@@ -48,40 +47,42 @@ const DocumentList: React.FC<DocumentListProps> = ({
     documentsSection: {
       marginTop: responsive.getResponsiveValue(24, 28, 32, 36, 40),
     },
+    sectionTitle: {
+      fontSize: responsive.getFontSize(18, 17, 21),
+      fontWeight: "600",
+      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      paddingHorizontal: responsive.getResponsiveValue(4, 6, 8, 10, 12),
+    },
   });
 
   return (
-    <Card style={styles.documentsSection}>
-      <Card.Header>
-        <Card.Title size="md">{translations.myDocuments}</Card.Title>
-      </Card.Header>
-      <Card.Content>
-        {documents.length === 0 ? (
-          <DocumentEmptyState message={translations.noDocuments} />
-        ) : (
-          documents.map((document) => (
-            <DocumentCard
-              key={document.id}
-              document={document}
-              onView={onViewDocument}
-              onDelete={onDeleteDocument}
-              translations={{
-                nationalId: translations.nationalId,
-                drivingLicense: translations.drivingLicense,
-                pending: translations.pending,
-                approved: translations.approved,
-                rejected: translations.rejected,
-                uploadedOn: translations.uploadedOn,
-                approvedOn: translations.approvedOn,
-                rejectionReason: translations.rejectionReason,
-                view: translations.view,
-                delete: translations.delete,
-              }}
-            />
-          ))
-        )}
-      </Card.Content>
-    </Card>
+    <View style={styles.documentsSection}>
+      <Text style={styles.sectionTitle}>{translations.myDocuments}</Text>
+      {documents.length === 0 ? (
+        <DocumentEmptyState message={translations.noDocuments} />
+      ) : (
+        documents.map((document) => (
+          <DocumentCard
+            key={document.id}
+            document={document}
+            onView={onViewDocument}
+            onDelete={onDeleteDocument}
+            translations={{
+              nationalId: translations.nationalId,
+              drivingLicense: translations.drivingLicense,
+              pending: translations.pending,
+              approved: translations.approved,
+              rejected: translations.rejected,
+              uploadedOn: translations.uploadedOn,
+              approvedOn: translations.approvedOn,
+              rejectionReason: translations.rejectionReason,
+              view: translations.view,
+              delete: translations.delete,
+            }}
+          />
+        ))
+      )}
+    </View>
   );
 };
 

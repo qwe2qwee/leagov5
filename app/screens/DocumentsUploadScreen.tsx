@@ -80,6 +80,7 @@ const DocumentUploadScreen: React.FC = () => {
     rejected: currentLanguage === "ar" ? "مرفوضة" : "Rejected",
 
     // Messages
+    successTitle: currentLanguage === "ar" ? "نجاح" : "Success",
     success:
       currentLanguage === "ar"
         ? "تم رفع الوثيقة بنجاح"
@@ -88,6 +89,10 @@ const DocumentUploadScreen: React.FC = () => {
       currentLanguage === "ar"
         ? "تم تحديث الوثيقة بنجاح"
         : "Document updated successfully",
+    deleteSuccess:
+      currentLanguage === "ar"
+        ? "تم حذف الوثيقة بنجاح"
+        : "Document deleted successfully",
     reviewMessage:
       currentLanguage === "ar"
         ? "ستتم مراجعة الوثيقة قريباً"
@@ -206,6 +211,21 @@ const DocumentUploadScreen: React.FC = () => {
   const selectDocument = async (
     documentType: "national_id" | "driving_license"
   ) => {
+    // Check if document is already approved or pending
+    const existingDoc = getExistingDocument(documentType);
+    if (
+      existingDoc?.status === "approved" ||
+      existingDoc?.status === "pending"
+    ) {
+      Alert.alert(
+        t.error,
+        currentLanguage === "ar"
+          ? "لا يمكن تعديل الوثيقة وهي قيد المراجعة أو معتمدة"
+          : "Cannot modify document while under review or approved"
+      );
+      return;
+    }
+
     try {
       // Request permission
       const permission =
@@ -286,6 +306,13 @@ const DocumentUploadScreen: React.FC = () => {
         const docType = documentType as "national_id" | "driving_license";
         const existingDoc = getExistingDocument(docType);
 
+        if (
+          existingDoc?.status === "approved" ||
+          existingDoc?.status === "pending"
+        ) {
+          continue; // Skip approved or pending documents
+        }
+
         // Create unique filename
         const fileExt = file.name.split(".").pop() || "jpg";
         const fileName = `${user.id}/${documentType}_${Date.now()}.${fileExt}`;
@@ -348,7 +375,7 @@ const DocumentUploadScreen: React.FC = () => {
       setSelectedFiles({});
       await loadDocuments();
 
-      Alert.alert(isUpdate ? t.updateSuccess : t.success, t.reviewMessage);
+      Alert.alert(isUpdate ? t.successTitle : t.successTitle, isUpdate ? t.updateSuccess : t.success);
     } catch (error) {
       console.error("Upload error:", error);
       Alert.alert(t.error, t.uploadError);
@@ -360,6 +387,16 @@ const DocumentUploadScreen: React.FC = () => {
 
   // Delete document
   const deleteDocument = async (document: Document) => {
+    if (document.status === "approved") {
+      Alert.alert(
+        t.error,
+        currentLanguage === "ar"
+          ? "لا يمكن حذف الوثيقة المعتمدة"
+          : "Cannot delete approved document"
+      );
+      return;
+    }
+
     Alert.alert(
       t.delete,
       `${t.delete} ${
@@ -390,7 +427,7 @@ const DocumentUploadScreen: React.FC = () => {
               if (dbError) throw dbError;
               // Reload documents
               await loadDocuments();
-              Alert.alert(t.success, "Document deleted successfully");
+              Alert.alert(t.successTitle, t.deleteSuccess);
             } catch (error) {
               console.error("Delete error:", error);
               Alert.alert(t.error, "Failed to delete document");
@@ -437,6 +474,7 @@ const DocumentUploadScreen: React.FC = () => {
       flex: 1,
       justifyContent: "center",
       alignItems: "center",
+      backgroundColor: colors.background,
     },
     loadingText: {
       fontSize: responsive.getFontSize(16, 15, 18),
@@ -470,6 +508,14 @@ const DocumentUploadScreen: React.FC = () => {
           onSelectDocument={selectDocument}
           onUpload={uploadDocuments}
           uploading={uploading}
+          approvedDocuments={{
+            national_id:
+              getExistingDocument("national_id")?.status === "approved" ||
+              getExistingDocument("national_id")?.status === "pending",
+            driving_license:
+              getExistingDocument("driving_license")?.status === "approved" ||
+              getExistingDocument("driving_license")?.status === "pending",
+          }}
           translations={{
             uploadNew: t.uploadNew,
             nationalId: t.nationalId,

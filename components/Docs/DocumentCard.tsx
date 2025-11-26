@@ -6,15 +6,16 @@ import useLanguageStore from "@/store/useLanguageStore";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Platform,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import Modal from "react-native-modal"; // Import react-native-modal
+import Modal from "react-native-modal";
 
 interface Document {
   id: string;
@@ -88,7 +89,12 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
   // Format date
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString(
-      currentLanguage === "ar" ? "ar-SA" : "en-US"
+      currentLanguage === "ar" ? "ar-SA" : "en-US",
+      {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }
     );
   };
 
@@ -124,11 +130,22 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
   const styles = StyleSheet.create({
     documentCard: {
       backgroundColor: colors.surface,
-      borderRadius: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      borderRadius: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       borderWidth: 1,
       borderColor: colors.border,
       marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       overflow: "hidden",
+      ...Platform.select({
+        ios: {
+          shadowColor: colors.text + "20",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+        },
+        android: {
+          elevation: 3,
+        },
+      }),
     },
     cardHeader: {
       flexDirection: isRTL ? "row-reverse" : "row",
@@ -137,10 +154,10 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       paddingBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
     },
     documentIcon: {
-      width: responsive.getResponsiveValue(48, 52, 56, 60, 64),
-      height: responsive.getResponsiveValue(48, 52, 56, 60, 64),
-      borderRadius: responsive.getResponsiveValue(24, 26, 28, 30, 32),
-      backgroundColor: colors.primary + "20",
+      width: responsive.getResponsiveValue(52, 56, 60, 64, 68),
+      height: responsive.getResponsiveValue(52, 56, 60, 64, 68),
+      borderRadius: responsive.getResponsiveValue(26, 28, 30, 32, 34),
+      backgroundColor: colors.primary + "15",
       justifyContent: "center",
       alignItems: "center",
       marginRight: isRTL
@@ -152,14 +169,14 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       flex: 1,
     },
     documentTitle: {
-      fontSize: responsive.getFontSize(17, 16, 20),
-      fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
+      fontSize: responsive.getFontSize(16, 15, 18),
+      fontFamily: fonts.SemiBold || fonts.Medium,
       color: colors.text,
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      marginBottom: responsive.getResponsiveValue(4, 6, 8, 10, 12),
       textAlign: isRTL ? "right" : "left",
     },
     documentDate: {
-      fontSize: responsive.getFontSize(13, 12, 15),
+      fontSize: responsive.getFontSize(12, 11, 14),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
       textAlign: isRTL ? "right" : "left",
@@ -167,30 +184,33 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
     },
     cardBody: {
       paddingHorizontal: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-      paddingBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      paddingBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
     },
     statusContainer: {
       flexDirection: isRTL ? "row-reverse" : "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      paddingTop: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      borderTopWidth: 1,
+      borderTopColor: colors.border + "50",
     },
     statusBadge: {
       flexDirection: isRTL ? "row-reverse" : "row",
       alignItems: "center",
       paddingHorizontal: responsive.getResponsiveValue(12, 14, 16, 18, 20),
       paddingVertical: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-      borderRadius: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      borderRadius: responsive.getResponsiveValue(20, 22, 24, 26, 28),
       gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
     },
     statusText: {
       fontSize: responsive.getFontSize(12, 11, 14),
-      fontFamily: fonts.Medium || fonts.Regular,
+      fontFamily: fonts.Medium,
       color: colors.textInverse,
     },
     actionButtons: {
       flexDirection: isRTL ? "row-reverse" : "row",
-      gap: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      gap: responsive.getResponsiveValue(12, 16, 20, 24, 28),
     },
     actionButton: {
       flex: 1,
@@ -199,19 +219,23 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       justifyContent: "center",
       paddingVertical: responsive.getResponsiveValue(12, 14, 16, 18, 20),
       paddingHorizontal: responsive.getResponsiveValue(16, 18, 20, 22, 24),
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
       backgroundColor: colors.backgroundSecondary,
-      gap: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      gap: responsive.getResponsiveValue(8, 10, 12, 14, 16),
     },
     viewButton: {
-      backgroundColor: colors.primary + "20",
+      backgroundColor: colors.primary + "10",
+      borderWidth: 1,
+      borderColor: colors.primary + "20",
     },
     deleteButton: {
-      backgroundColor: colors.error + "20",
+      backgroundColor: colors.error + "10",
+      borderWidth: 1,
+      borderColor: colors.error + "20",
     },
     actionButtonText: {
       fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.Medium || fonts.Regular,
+      fontFamily: fonts.Medium,
       color: colors.text,
     },
     viewButtonText: {
@@ -223,15 +247,15 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
     rejectionContainer: {
       margin: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       marginTop: 0,
-      padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-      backgroundColor: colors.error + "15",
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      backgroundColor: colors.error + "10",
+      borderRadius: responsive.getResponsiveValue(12, 16, 20, 24, 28),
       borderLeftWidth: 4,
       borderLeftColor: colors.error,
     },
     rejectionTitle: {
       fontSize: responsive.getFontSize(13, 12, 15),
-      fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
+      fontFamily: fonts.SemiBold,
       color: colors.error,
       marginBottom: responsive.getResponsiveValue(4, 6, 8, 10, 12),
       textAlign: isRTL ? "right" : "left",
@@ -241,14 +265,14 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       fontFamily: fonts.Regular,
       color: colors.error,
       textAlign: isRTL ? "right" : "left",
-      lineHeight: responsive.getFontSize(17, 16, 20),
+      lineHeight: responsive.getFontSize(18, 17, 21),
     },
     // Enhanced Modal styles for react-native-modal
     modalContent: {
       backgroundColor: colors.surface,
-      borderRadius: responsive.getResponsiveValue(20, 24, 28, 32, 36),
+      borderRadius: responsive.getResponsiveValue(24, 28, 32, 36, 40),
       margin: responsive.getResponsiveValue(20, 24, 28, 32, 36),
-      maxHeight: "90%",
+      maxHeight: "85%",
       overflow: "hidden",
     },
     modalHeader: {
@@ -256,38 +280,41 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       alignItems: "center",
       justifyContent: "space-between",
       padding: responsive.getResponsiveValue(20, 24, 28, 32, 36),
-      paddingBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      backgroundColor: colors.backgroundSecondary,
     },
     modalTitle: {
-      fontSize: responsive.getFontSize(18, 17, 21),
-      fontFamily: fonts.SemiBold || fonts.Bold || fonts.Regular,
+      fontSize: responsive.getFontSize(16, 15, 18),
+      fontFamily: fonts.SemiBold,
       color: colors.text,
       flex: 1,
       textAlign: isRTL ? "right" : "left",
     },
     closeButton: {
-      width: responsive.getResponsiveValue(36, 40, 44, 48, 52),
-      height: responsive.getResponsiveValue(36, 40, 44, 48, 52),
-      borderRadius: responsive.getResponsiveValue(18, 20, 22, 24, 26),
-      backgroundColor: colors.backgroundSecondary,
+      width: responsive.getResponsiveValue(32, 36, 40, 44, 48),
+      height: responsive.getResponsiveValue(32, 36, 40, 44, 48),
+      borderRadius: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      backgroundColor: colors.surface,
       justifyContent: "center",
       alignItems: "center",
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     imageContainer: {
       height: responsive.getResponsiveValue(400, 450, 500, 550, 600),
       justifyContent: "center",
       alignItems: "center",
-      backgroundColor: colors.backgroundSecondary,
-      margin: responsive.getResponsiveValue(20, 24, 28, 32, 36),
-      marginTop: responsive.getResponsiveValue(16, 20, 24, 28, 32),
-      borderRadius: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      backgroundColor: colors.background,
+      margin: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      borderRadius: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
     },
     documentImage: {
       width: "100%",
       height: "100%",
-      borderRadius: responsive.getResponsiveValue(12, 16, 20, 24, 28),
     },
     loadingContainer: {
       justifyContent: "center",
@@ -383,19 +410,23 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.actionButton, styles.deleteButton]}
-              onPress={() => onDelete(document)}
-            >
-              <Ionicons
-                name="trash-outline"
-                size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
-                color={colors.error}
-              />
-              <Text style={[styles.actionButtonText, styles.deleteButtonText]}>
-                {translations.delete}
-              </Text>
-            </TouchableOpacity>
+            {document.status !== "approved" && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={() => onDelete(document)}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
+                  color={colors.error}
+                />
+                <Text
+                  style={[styles.actionButtonText, styles.deleteButtonText]}
+                >
+                  {translations.delete}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
