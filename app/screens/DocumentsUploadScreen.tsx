@@ -488,6 +488,8 @@ const DocumentUploadScreen: React.FC = () => {
     },
     scrollContent: {
       padding: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      paddingTop:0,
+      marginBottom:responsive.safeAreaBottom
     },
     loadingContainer: {
       flex: 1,

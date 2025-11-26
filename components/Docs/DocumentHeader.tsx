@@ -25,6 +25,7 @@ const DocumentHeader: React.FC<DocumentHeaderProps> = ({ title, subtitle }) => {
       alignItems: "center",
       marginBottom: responsive.getResponsiveValue(24, 28, 32, 36, 40),
       gap: responsive.getResponsiveValue(12, 16, 20, 24, 28),
+      paddingTop:responsive.safeAreaTop
     },
     backButton: {
       width: responsive.getResponsiveValue(40, 44, 48, 52, 56),
