@@ -40,6 +40,7 @@ export interface Booking {
   approved_at?: string;
   notes?: string;
   expires_at?: string;
+  booking_range?: string | null;
   created_at: string;
   updated_at: string;
   car?: any;
