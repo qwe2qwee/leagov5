@@ -3,10 +3,10 @@
 // ============================
 
 import CarCard from "@/components/Home/CarCard";
+import { useLocationContext } from "@/context/LocationContext";
 import { useTabBarHeight } from "@/context/TabBarHeightContext";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
-import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -27,11 +27,8 @@ const FeaturedCars: React.FC = () => {
   const { height: tabBarHeight } = useTabBarHeight();
   const insets = useSafeAreaInsets();
 
-  const {
-    userLocation,
-    loading: locationLoading,
-    getCurrentLocation,
-  } = useLocation();
+  // ✅ استخدام الموقع من الـ Context - لا حاجة لاستدعاء getCurrentLocation هنا
+  const { userLocation } = useLocationContext();
 
   const spacing = {
     md: getSpacing(16),
@@ -43,16 +40,12 @@ const FeaturedCars: React.FC = () => {
     xl: getFontSize(24),
   };
 
-  // Fetch location and nearest cars on mount
-  useEffect(() => {
-    getCurrentLocation();
-  }, []);
-
+  // ✅ جلب السيارات الأقرب عند توفر الموقع (الموقع يتم جلبه في index.tsx)
   useEffect(() => {
     if (userLocation) {
       getNearestCars(userLocation.lat, userLocation.lon);
     }
-  }, [userLocation]);
+  }, [userLocation, getNearestCars]);
 
   const styles = {
     container: {
@@ -100,7 +93,7 @@ const FeaturedCars: React.FC = () => {
 
   const featuredData = nearestCars.length > 0 ? nearestCars : cars;
 
-  if (loading || locationLoading) {
+  if (loading) {
     return <SkeletonLoader />;
   }
 

@@ -1,6 +1,6 @@
+import { useLocationContext } from "@/context/LocationContext";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
-import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -47,7 +47,7 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
     clearSuggestions,
   } = useCars();
 
-  const { userLocation } = useLocation();
+  const { userLocation } = useLocationContext();
 
   // State management
   const [selectedFilters, setSelectedFilters] = useState({

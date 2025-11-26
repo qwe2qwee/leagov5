@@ -13,13 +13,13 @@ import AnnouncementsContainer from "@/components/Home/AnnouncementsContainer";
 import CarCard from "@/components/Home/CarCard";
 import LoadingEmpty from "@/components/Home/LoadingEmpty";
 import { SafeAreaScrollView } from "@/components/SafeAreaView";
+import { useLocationContext } from "@/context/LocationContext";
 import {
   Announcement,
   useAnnouncements,
 } from "@/hooks/supabaseHooks/useAnnouncements";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
-import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -62,7 +62,7 @@ export default function HomeScreen() {
     refreshCars,
   } = useCars();
 
-  const { userLocation, getCurrentLocation } = useLocation();
+  const { userLocation, getCurrentLocation } = useLocationContext();
 
   // Animation refs
   const scrollY = useRef(new Animated.Value(0)).current;
