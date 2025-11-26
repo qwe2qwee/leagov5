@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -146,6 +147,8 @@ export default function LocationScreen() {
   const [latitudeText, setLatitudeText] = useState<string>("");
   const [longitudeText, setLongitudeText] = useState<string>("");
   const [accuracyText, setAccuracyText] = useState<string>("");
+  const [cityName, setCityName] = useState<string | null>(null);
+  const [fetchingCity, setFetchingCity] = useState<boolean>(false);
 
   // Localization
   const t = {
@@ -225,6 +228,10 @@ export default function LocationScreen() {
     notDetermined: currentLanguage === "ar" ? "غير محدد" : "Not determined",
     notUpdated: currentLanguage === "ar" ? "لم يتم التحديث" : "Not updated",
     meters: currentLanguage === "ar" ? "متر" : "meters",
+    detectedCity: currentLanguage === "ar" ? "المدينة المكتشفة" : "Detected City",
+    fetchingCity: currentLanguage === "ar" ? "جاري تحديد المدينة..." : "Fetching city...",
+    cityNotFound: currentLanguage === "ar" ? "لم يتم العثور على المدينة" : "City not found",
+    cityFetchError: currentLanguage === "ar" ? "خطأ في تحديد المدينة" : "Error fetching city",
   };
 
   // Load location data on mount
@@ -242,6 +249,29 @@ export default function LocationScreen() {
       setAccuracyText(location.location_accuracy?.toString() || "");
     }
   }, [location]);
+
+  // Auto-fetch city when coordinates change
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    
+    const fetchCity = async () => {
+      if (!location?.user_latitude || !location?.user_longitude) {
+        setCityName(null);
+        return;
+      }
+
+      // Debounce the API call
+      timeoutId = setTimeout(async () => {
+        await getCityFromCoordinates(location.user_latitude!, location.user_longitude!);
+      }, 800);
+    };
+
+    fetchCity();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [location?.user_latitude, location?.user_longitude]);
 
   const fetchLocation = async (): Promise<void> => {
     try {
@@ -296,6 +326,30 @@ export default function LocationScreen() {
       showError(t.saveError);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const getCityFromCoordinates = async (lat: number, lon: number): Promise<void> => {
+    setFetchingCity(true);
+    try {
+      const geocodeResults = await Location.reverseGeocodeAsync({
+        latitude: lat,
+        longitude: lon,
+      });
+
+      if (geocodeResults && geocodeResults.length > 0) {
+        const result = geocodeResults[0];
+        // Try to get city from various fields
+        const city = result.city || result.subregion || result.region || t.cityNotFound;
+        setCityName(city);
+      } else {
+        setCityName(t.cityNotFound);
+      }
+    } catch (error) {
+      console.error("Error fetching city from coordinates:", error);
+      setCityName(t.cityFetchError);
+    } finally {
+      setFetchingCity(false);
     }
   };
 
@@ -422,6 +476,7 @@ export default function LocationScreen() {
       paddingTop:
         responsive.safeAreaTop +
         responsive.getResponsiveValue(8, 12, 16, 20, 24),
+      paddingBottom: responsive.safeAreaBottom,
     },
     header: {
       flexDirection: isRTL ? "row-reverse" : "row",
@@ -444,20 +499,43 @@ export default function LocationScreen() {
     },
     statusCard: {
       backgroundColor: colors.backgroundSecondary,
-      borderRadius: responsive.getResponsiveValue(8, 10, 12, 14, 16),
-      padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),
-      marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      marginBottom: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     statusRow: {
       flexDirection: isRTL ? "row-reverse" : "row",
       alignItems: "center",
-      marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      justifyContent: "space-between",
+      paddingVertical: responsive.getResponsiveValue(4, 6, 8, 10, 12),
+    },
+    statusRowLeft: {
+      flexDirection: isRTL ? "row-reverse" : "row",
+      alignItems: "center",
+      flex: 1,
     },
     statusText: {
       fontSize: responsive.getFontSize(13, 12, 15),
+      fontFamily: fonts.Medium || fonts.Regular,
+      color: colors.text,
+      marginHorizontal: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+      flex: 1,
+    },
+    statusLabel: {
+      fontSize: responsive.getFontSize(12, 11, 14),
       fontFamily: fonts.Regular,
       color: colors.textSecondary,
-      marginHorizontal: responsive.getResponsiveValue(6, 8, 10, 12, 14),
+      marginHorizontal: responsive.getResponsiveValue(8, 10, 12, 14, 16),
+    },
+    cityCard: {
+      backgroundColor: colors.surface,
+      borderRadius: responsive.getResponsiveValue(12, 14, 16, 18, 20),
+      padding: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      marginBottom: responsive.getResponsiveValue(16, 18, 20, 22, 24),
+      borderWidth: 1,
+      borderColor: colors.primary + "30",
     },
     inputContainer: {
       marginBottom: responsive.getResponsiveValue(16, 20, 24, 28, 32),
@@ -553,37 +631,64 @@ export default function LocationScreen() {
           </Card.Header>
 
           <Card.Content>
+            {/* Detected City Information */}
+            {(cityName || fetchingCity) && (
+              <View style={styles.cityCard}>
+                <View style={styles.statusRow}>
+                  <View style={styles.statusRowLeft}>
+                    <IconComponent
+                      name="business-outline"
+                      size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.statusText}>{t.detectedCity}</Text>
+                  </View>
+                  {fetchingCity ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Badge variant="info">{cityName}</Badge>
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Status Information */}
             {(location.location_updated_at || location.location_accuracy) && (
               <View style={styles.statusCard}>
                 {location.location_updated_at && (
                   <View style={styles.statusRow}>
-                    <IconComponent
-                      name="time-outline"
-                      size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                      color={colors.textSecondary}
-                    />
-                    <Text style={styles.statusText}>
-                      {t.lastUpdate} {formatDate(location.location_updated_at)}
+                    <View style={styles.statusRowLeft}>
+                      <IconComponent
+                        name="time-outline"
+                        size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
+                        color={colors.textSecondary}
+                      />
+                      <Text style={styles.statusLabel}>
+                        {t.lastUpdate}
+                      </Text>
+                    </View>
+                    <Text style={[styles.statusText, { flex: 0, fontSize: responsive.getFontSize(12, 11, 14) }]}>
+                      {formatDate(location.location_updated_at)}
                     </Text>
                   </View>
                 )}
 
                 {location.location_accuracy && (
-                  <View style={styles.statusRow}>
-                    <IconComponent
-                      name="locate-outline"
-                      size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
-                      color={colors.textSecondary}
-                    />
-                    <Text style={styles.statusText}>{t.locationAccuracy}</Text>
+                  <View style={[styles.statusRow, location.location_updated_at && { marginTop: responsive.getResponsiveValue(8, 10, 12, 14, 16) }]}>
+                    <View style={styles.statusRowLeft}>
+                      <IconComponent
+                        name="locate-outline"
+                        size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
+                        color={colors.textSecondary}
+                      />
+                      <Text style={styles.statusLabel}>{t.locationAccuracy}</Text>
+                    </View>
                     <Badge
                       variant={getAccuracyBadgeVariant(
                         location.location_accuracy
                       )}
                     >
-                      {Math.round(location.location_accuracy)} {t.meters} -{" "}
-                      {getAccuracyText(location.location_accuracy)}
+                      {Math.round(location.location_accuracy)} {t.meters} · {getAccuracyText(location.location_accuracy)}
                     </Badge>
                   </View>
                 )}
@@ -608,7 +713,9 @@ export default function LocationScreen() {
               </Select>
             </View>
 
-            <Separator />
+            <View style={{ marginVertical: responsive.getResponsiveValue(8, 10, 12, 14, 16) }}>
+              <Separator />
+            </View>
 
             {/* Coordinates Input */}
             <View style={styles.coordRow}>
@@ -652,7 +759,9 @@ export default function LocationScreen() {
               </View>
             )}
 
-            <Separator />
+            <View style={{ marginVertical: responsive.getResponsiveValue(8, 10, 12, 14, 16) }}>
+              <Separator />
+            </View>
 
             {/* Get Current Location Button */}
             <CustomButton

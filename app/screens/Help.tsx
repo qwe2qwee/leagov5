@@ -229,7 +229,11 @@ export default function ContactUsScreen() {
       let url: string;
 
       if (option.type === "whatsapp") {
-        url = `whatsapp://send?phone=${option.value}`;
+        // Remove '+' and any non-numeric characters from phone number
+        const phoneNumber = option.value.replace(/\D/g, '');
+        // Use https://wa.me/ instead of whatsapp:// for better compatibility
+        // Works in Expo Go and production builds
+        url = `https://wa.me/${phoneNumber}`;
       } else if (option.type === "email") {
         url = `mailto:${option.value}?subject=${encodeURIComponent(
           option.subject || ""
@@ -238,19 +242,15 @@ export default function ContactUsScreen() {
         return;
       }
 
-      const canOpen = await Linking.canOpenURL(url);
-
-      if (canOpen) {
-        await Linking.openURL(url);
-        showSuccess(t.contactSuccess);
-      } else {
-        const errorMessage =
-          option.type === "whatsapp" ? t.whatsappError : t.emailError;
-        showError(errorMessage);
-      }
+      // Try to open the URL directly without canOpenURL check
+      // canOpenURL can be unreliable in production builds
+      await Linking.openURL(url);
+      showSuccess(t.contactSuccess);
     } catch (error) {
       console.error(`Error opening ${option.type}:`, error);
-      showError(t.contactError);
+      const errorMessage =
+        option.type === "whatsapp" ? t.whatsappError : t.emailError;
+      showError(errorMessage);
     }
   };
 

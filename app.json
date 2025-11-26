@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp", "mailto"],
         "UIBackgroundModes": [
           "audio",
           "background-fetch",
