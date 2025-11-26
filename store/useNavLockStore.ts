@@ -9,7 +9,7 @@ type NavLockStore = {
   forceUnlock: () => void;
 };
 
-const AUTO_UNLOCK_TIMEOUT = 3000; // 3 ثواني
+const AUTO_UNLOCK_TIMEOUT = 1000; // 1 ثواني
 
 export const useNavLockStore = create<NavLockStore>((set, get) => ({
   isLocked: false,
@@ -21,15 +21,12 @@ export const useNavLockStore = create<NavLockStore>((set, get) => ({
 
     // مسح أي timeout سابق
     if (state.timeoutId) {
-      console.log("[NavStore] Clearing previous timeout");
       clearTimeout(state.timeoutId);
     }
 
-    console.log("[NavStore] Locking navigation for 3 seconds");
 
     // إنشاء timeout جديد
     const newTimeoutId = setTimeout(() => {
-      console.log("[NavStore] Auto-unlocking after 3 seconds timeout");
       set({
         isLocked: false,
         lockTimestamp: null,
@@ -47,7 +44,6 @@ export const useNavLockStore = create<NavLockStore>((set, get) => ({
   unlock: () => {
     const state = get();
 
-    console.log("[NavStore] Manual unlock");
 
     // مسح الـ timeout عند الفتح اليدوي
     if (state.timeoutId) {
@@ -64,7 +60,6 @@ export const useNavLockStore = create<NavLockStore>((set, get) => ({
   forceUnlock: () => {
     const state = get();
 
-    console.log("[NavStore] Force unlock - clearing everything");
 
     // مسح الـ timeout
     if (state.timeoutId) {

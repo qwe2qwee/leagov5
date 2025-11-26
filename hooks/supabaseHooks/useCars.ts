@@ -12,12 +12,17 @@ import { supabase } from "../../lib/supabase";
 
 interface NearestCarResult {
   car_id: string;
-  car_model: string;
-  car_brand: string;
-  car_color: string;
+  brand_name_ar: string;
+  brand_name_en: string;
+  model_name_ar: string;
+  model_name_en: string;
+  color_name_ar: string;
+  color_name_en: string;
   daily_price: number;
-  branch_name: string;
-  branch_location: string;
+  branch_name_ar: string;
+  branch_name_en: string;
+  branch_location_ar: string;
+  branch_location_en: string;
   distance_meters: number;
   distance_km: number;
   main_image_url: string;
@@ -115,12 +120,12 @@ const transformNearestCarToCarWithImages = (
 
   return {
     id: nearestCar.car_id,
-    brand_name_ar: nearestCar.car_brand,
-    brand_name_en: nearestCar.car_brand,
-    model_name_ar: nearestCar.car_model,
-    model_name_en: nearestCar.car_model,
-    color_name_ar: nearestCar.car_color,
-    color_name_en: nearestCar.car_color,
+    brand_name_ar: nearestCar.brand_name_ar,
+    brand_name_en: nearestCar.brand_name_en,
+    model_name_ar: nearestCar.model_name_ar,
+    model_name_en: nearestCar.model_name_en,
+    color_name_ar: nearestCar.color_name_ar,
+    color_name_en: nearestCar.color_name_en,
     daily_price: nearestCar.daily_price,
     weekly_price: null,
     monthly_price: null,
@@ -164,10 +169,10 @@ const transformNearestCarToCarWithImages = (
 
     branch: {
       id: "",
-      name_ar: nearestCar.branch_name,
-      name_en: nearestCar.branch_name,
-      location_ar: nearestCar.branch_location,
-      location_en: nearestCar.branch_location,
+      name_ar: nearestCar.branch_name_ar,
+      name_en: nearestCar.branch_name_en,
+      location_ar: nearestCar.branch_location_ar,
+      location_en: nearestCar.branch_location_en,
       latitude: 0,
       longitude: 0,
       phone: "",
@@ -175,10 +180,10 @@ const transformNearestCarToCarWithImages = (
     },
 
     branch_id: "",
-    branch_name_ar: nearestCar.branch_name,
-    branch_name_en: nearestCar.branch_name,
-    branch_location_ar: nearestCar.branch_location,
-    branch_location_en: nearestCar.branch_location,
+    branch_name_ar: nearestCar.branch_name_ar,
+    branch_name_en: nearestCar.branch_name_en,
+    branch_location_ar: nearestCar.branch_location_ar,
+    branch_location_en: nearestCar.branch_location_en,
 
     distance_km: nearestCar.distance_km,
     distance_meters: nearestCar.distance_meters,

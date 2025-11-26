@@ -15,7 +15,6 @@ export function useSafeNavigate() {
   useEffect(() => {
     return () => {
       if (isLocked) {
-        console.log("[useSafeNavigate] Cleanup on unmount, force unlocking");
         forceUnlock();
       }
     };
@@ -26,7 +25,6 @@ export function useSafeNavigate() {
       const bypassLock = options?.force === true;
 
       if (!bypassLock && isLocked) {
-        console.debug("[useSafeNavigate] navigation blocked: isLocked = true");
         return;
       }
 
@@ -37,9 +35,8 @@ export function useSafeNavigate() {
       try {
         action();
       } catch (err) {
-        console.error("[useSafeNavigate] action threw:", err);
+        console.error("action threw:", err);
         if (!bypassLock) {
-          console.log("[useSafeNavigate] Force unlocking due to error");
           forceUnlock();
         }
         throw err;
