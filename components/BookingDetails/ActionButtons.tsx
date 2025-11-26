@@ -37,6 +37,7 @@ export default function ActionButtons({
       position: "absolute",
       bottom: 0,
       left: 0,
+      
       right: 0,
       backgroundColor: colors.surface,
       padding: responsive.getResponsiveValue(12, 16, 20, 24, 28),

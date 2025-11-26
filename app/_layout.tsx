@@ -7,7 +7,6 @@ import "react-native-reanimated";
 import { AuthProvider } from "@/components/Auth/AuthProvider";
 import SplashScreen from "@/components/SplashScreen";
 import { ToastContainer } from "@/components/Toast/ToastContainer";
-import { LocationProvider } from "@/context/LocationContext";
 import { TabBarHeightProvider } from "@/context/TabBarHeightContext";
 
 // منع إخفاء splash screen الافتراضي تلقائياً
@@ -75,9 +74,8 @@ export default function RootLayout() {
   // 🧭 التطبيق الرئيسي
   return (
     <AuthProvider>
-      <LocationProvider>
-        <TabBarHeightProvider>
-          <Stack>
+      <TabBarHeightProvider>
+        <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen
@@ -128,10 +126,9 @@ export default function RootLayout() {
           />
           <Stack.Screen name="screens/Help" options={{ headerShown: false }} />
           <Stack.Screen name="screens/About" options={{ headerShown: false }} />
-          </Stack>
-          <ToastContainer />
-        </TabBarHeightProvider>
-      </LocationProvider>
+        </Stack>
+        <ToastContainer />
+      </TabBarHeightProvider>
     </AuthProvider>
   );
 }

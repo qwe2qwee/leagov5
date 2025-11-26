@@ -13,13 +13,13 @@ import AnnouncementsContainer from "@/components/Home/AnnouncementsContainer";
 import CarCard from "@/components/Home/CarCard";
 import LoadingEmpty from "@/components/Home/LoadingEmpty";
 import { SafeAreaScrollView } from "@/components/SafeAreaView";
-import { useLocationContext } from "@/context/LocationContext";
 import {
   Announcement,
   useAnnouncements,
 } from "@/hooks/supabaseHooks/useAnnouncements";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
+import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -62,7 +62,7 @@ export default function HomeScreen() {
     refreshCars,
   } = useCars();
 
-  const { userLocation, getCurrentLocation } = useLocationContext();
+  const { userLocation, getCurrentLocation } = useLocation();
 
   // Animation refs
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -449,12 +449,12 @@ export default function HomeScreen() {
   }, [allCarsData.length, styles, colors, currentLanguage]);
 
   useEffect(() => {
+    // Only fetch if we don't have a location or it's very old (handled by store logic)
     getCurrentLocation({
       fallbackToDefault: true,
       defaultCity: "jeddah",
       enableHighAccuracy: false,
       timeout: 5000,
-      maxAge: 60 * 60 * 1000,
     }).catch((error) => {
       console.log("Using default location:", error.message);
     });

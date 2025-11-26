@@ -27,7 +27,8 @@ const SearchResults: React.FC<SearchResultsProps> = ({
   searchQuery,
 }) => {
   const { colors } = useTheme();
-  const { getSpacing, getFontSize, width } = useResponsive();
+  const { getSpacing, getFontSize, width,  } = useResponsive();
+  const responsive = useResponsive();
   const fonts = useFontFamily();
   const { currentLanguage, isRTL } = useLanguageStore();
   const insets = useSafeAreaInsets();
@@ -51,6 +52,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({
     container: {
       flex: 1,
       backgroundColor: colors.background,
+      marginBottom:  responsive.spacing.xl + responsive.safeAreaBottom + responsive.spacing.md + responsive.spacing.md + responsive.spacing.md,
     },
     resultsCount: {
       fontSize: fontSizes.sm,

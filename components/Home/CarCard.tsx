@@ -1,6 +1,6 @@
 import { icons } from "@/constants";
-import { useLocationContext } from "@/context/LocationContext";
 import { useFontFamily } from "@/hooks/useFontFamily";
+import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -22,7 +22,7 @@ export const CarCard: React.FC<CarCardProps> = ({
   const { colors, scheme } = useTheme();
   const { currentLanguage } = useLanguageStore();
   const { lock, unlock } = useNavLockStore();
-  const { userLocation, calculateDistance } = useLocationContext();
+  const { userLocation, calculateDistance } = useLocation();
 
   const fonts = useFontFamily();
   const {

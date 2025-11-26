@@ -3,10 +3,10 @@
 // ============================
 
 import CarCard from "@/components/Home/CarCard";
-import { useLocationContext } from "@/context/LocationContext";
 import { useTabBarHeight } from "@/context/TabBarHeightContext";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
+import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -26,9 +26,13 @@ const FeaturedCars: React.FC = () => {
   const { cars, nearestCars, loading, getNearestCars } = useCars();
   const { height: tabBarHeight } = useTabBarHeight();
   const insets = useSafeAreaInsets();
+  const responsive = useResponsive();
 
-  // ✅ استخدام الموقع من الـ Context - لا حاجة لاستدعاء getCurrentLocation هنا
-  const { userLocation } = useLocationContext();
+  const {
+    userLocation,
+    loading: locationLoading,
+    getCurrentLocation,
+  } = useLocation();
 
   const spacing = {
     md: getSpacing(16),
@@ -40,16 +44,23 @@ const FeaturedCars: React.FC = () => {
     xl: getFontSize(24),
   };
 
-  // ✅ جلب السيارات الأقرب عند توفر الموقع (الموقع يتم جلبه في index.tsx)
+  // Fetch location and nearest cars on mount
+  useEffect(() => {
+    // Store handles caching, so this is safe to call
+    getCurrentLocation();
+  }, []);
+
   useEffect(() => {
     if (userLocation) {
       getNearestCars(userLocation.lat, userLocation.lon);
     }
-  }, [userLocation, getNearestCars]);
+  }, [userLocation]);
 
   const styles = {
     container: {
       flex: 1,
+            marginBottom:  responsive.spacing.xl + responsive.safeAreaBottom + responsive.spacing.md,
+
     },
     header: {
       padding: spacing.md,
@@ -93,7 +104,7 @@ const FeaturedCars: React.FC = () => {
 
   const featuredData = nearestCars.length > 0 ? nearestCars : cars;
 
-  if (loading) {
+  if (loading || locationLoading) {
     return <SkeletonLoader />;
   }
 

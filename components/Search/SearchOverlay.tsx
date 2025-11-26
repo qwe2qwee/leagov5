@@ -1,19 +1,19 @@
-import { useLocationContext } from "@/context/LocationContext";
 import { useCars } from "@/hooks/supabaseHooks/useCars";
 import { useFontFamily } from "@/hooks/useFontFamily";
+import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Keyboard,
-  Platform,
-  Text,
-  TextInput,
-  TextStyle,
-  TouchableOpacity,
-  View,
+    Keyboard,
+    Platform,
+    Text,
+    TextInput,
+    TextStyle,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SearchResults from "./SearchResults";
@@ -47,7 +47,7 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({
     clearSuggestions,
   } = useCars();
 
-  const { userLocation } = useLocationContext();
+  const { userLocation } = useLocation();
 
   // State management
   const [selectedFilters, setSelectedFilters] = useState({
