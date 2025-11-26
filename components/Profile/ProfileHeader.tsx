@@ -29,17 +29,12 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({
   return (
     <View
       style={{
-        paddingTop: insets.top + responsive.getResponsiveValue(8, 10, 12, 14, 16),
-        paddingHorizontal: responsive.getResponsiveValue(20, 24, 28, 32, 36),
-        paddingBottom: responsive.getResponsiveValue(24, 28, 32, 36, 40),
-        backgroundColor: colors.surface,
+        paddingTop: insets.top + responsive.spacing.sm,
+        paddingBottom: responsive.spacing.sm,
         borderBottomWidth: 1,
         borderBottomColor: colors.borderLight,
-        shadowColor: colors.text,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
-        elevation: 3,
+        backgroundColor: colors.background,
+        paddingHorizontal: responsive.getResponsiveValue(20, 24, 28, 32, 36),
       }}
     >
       {/* Back Button */}
@@ -74,51 +69,8 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({
         </Text>
       </TouchableOpacity>
 
-      {/* Title and Subtitle */}
-      <View>
-        <View
-          style={{
-            flexDirection: isRTL ? "row-reverse" : "row",
-            alignItems: "center",
-            marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-          }}
-        >
-          <Ionicons
-            name="person-circle"
-            size={responsive.getResponsiveValue(28, 32, 36, 40, 44)}
-            color={colors.primary}
-            style={{
-              marginRight: isRTL ? 0 : responsive.getResponsiveValue(10, 12, 14, 16, 18),
-              marginLeft: isRTL ? responsive.getResponsiveValue(10, 12, 14, 16, 18) : 0,
-            }}
-          />
-          <Text
-            style={{
-              fontSize: responsive.getFontSize(26, 24, 30),
-              fontFamily: fonts.Bold || fonts.SemiBold || fonts.Regular,
-              color: colors.text,
-              textAlign: isRTL ? "right" : "left",
-            }}
-          >
-            {title}
-          </Text>
-        </View>
-
-        <Text
-          style={{
-            fontSize: responsive.getFontSize(14, 13, 16),
-            fontFamily: fonts.Regular,
-            color: colors.textSecondary,
-            textAlign: isRTL ? "right" : "left",
-            lineHeight: responsive.getFontSize(14, 13, 16) * 1.5,
-          }}
-        >
-          {subtitle}
-        </Text>
-      </View>
     </View>
   );
 };
 
 export default ProfileHeader;
-

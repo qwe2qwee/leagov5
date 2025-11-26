@@ -44,13 +44,7 @@ const profileSections = {
         route: "/screens/ProfileEdit",
         requiresAuth: true,
       },
-      {
-        icon: "calendar-outline",
-        titleAr: "حجوزاتي",
-        titleEn: "My Bookings",
-        route: "/Bills",
-        requiresAuth: true,
-      },
+
       {
         icon: "document-text-outline",
         titleAr: "الوثائق",
@@ -306,7 +300,7 @@ export default function ProfileScreen() {
       flex: 1,
     },
     sectionContainer: {
-      marginBottom: responsive.getResponsiveValue(20, 24, 28, 32, 36),
+      marginBottom: responsive.getResponsiveValue(10, 10, 10, 10, 10),
     },
     sectionTitle: {
       fontSize: responsive.getFontSize(16, 15, 18),
