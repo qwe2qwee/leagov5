@@ -1,4 +1,6 @@
+import { icons } from "@/constants";
 import { useFontFamily } from "@/hooks/useFontFamily";
+import { useLocation } from "@/hooks/useLocation";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
@@ -7,7 +9,7 @@ import { Car, CarCardProps } from "@/types/CardTypes";
 import { useSafeNavigate } from "@/utils/useSafeNavigate";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React from "react";
+import React, { useMemo } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
@@ -20,6 +22,7 @@ export const CarCard: React.FC<CarCardProps> = ({
   const { colors, scheme } = useTheme();
   const { currentLanguage } = useLanguageStore();
   const { lock, unlock } = useNavLockStore();
+  const { userLocation, calculateDistance } = useLocation();
 
   const fonts = useFontFamily();
   const {
@@ -56,6 +59,7 @@ export const CarCard: React.FC<CarCardProps> = ({
       "featured.book": activeLanguage === "ar" ? "احجز" : "Book",
       "common.sar": activeLanguage === "ar" ? "ر.س" : "SAR",
       "common.perday": activeLanguage === "ar" ? "يومياً" : "per day",
+      "common.km": activeLanguage === "ar" ? "كم" : "km",
     };
     return translations[key as keyof typeof translations] || key;
   };
@@ -108,6 +112,29 @@ export const CarCard: React.FC<CarCardProps> = ({
 
   const isAvailable = car.available === true;
   const isUnavailable = !isAvailable;
+
+  // Calculate distance
+  const distance = useMemo(() => {
+    // 1. Use pre-calculated distance if available (from nearest cars)
+    if (typeof car.distance_km === "number") {
+      return car.distance_km.toFixed(1);
+    }
+
+    // 2. Calculate if we have coordinates
+    if (
+      userLocation &&
+      car.branch?.latitude &&
+      car.branch?.longitude
+    ) {
+      const dist = calculateDistance(userLocation, {
+        lat: car.branch.latitude,
+        lon: car.branch.longitude,
+      });
+      return dist.toFixed(1);
+    }
+
+    return null;
+  }, [car, userLocation, calculateDistance]);
 
   const styles = StyleSheet.create({
     // ✅ Card محسّن للـ Grid - أصغر وأكثر تناسق
@@ -207,7 +234,7 @@ export const CarCard: React.FC<CarCardProps> = ({
     },
     priceRow: {
       flexDirection: activeLanguage === "ar" ? "row-reverse" : "row",
-      alignItems: "baseline",
+      alignItems: "center",
       gap: getSpacing(3),
       marginBottom: getSpacing(1),
     },
@@ -290,6 +317,26 @@ export const CarCard: React.FC<CarCardProps> = ({
       borderRadius: 3,
       backgroundColor: isAvailable ? colors.success : colors.error,
     },
+    // ✅ Distance Badge Styles
+    distanceBadge: {
+      position: "absolute",
+      bottom: getSpacing(8),
+      right: activeLanguage === "ar" ? undefined : getSpacing(8),
+      left: activeLanguage === "ar" ? getSpacing(8) : undefined,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: getSpacing(2),
+      backgroundColor: "rgba(0, 0, 0, 0.6)",
+      paddingHorizontal: getSpacing(6),
+      paddingVertical: getSpacing(3),
+      borderRadius: getSpacing(4),
+      zIndex: 10,
+    },
+    distanceText: {
+      fontSize: getFontSize(10),
+      fontFamily: fonts.Bold,
+      color: "#FFFFFF",
+    },
   });
 
   const savedAmount = car.price.daily - discountedPrice;
@@ -327,6 +374,20 @@ export const CarCard: React.FC<CarCardProps> = ({
               <Badge variant="destructive">{t("featured.unavailable")}</Badge>
             )}
           </View>
+
+          {/* ✅ Distance Badge (New High Visibility) */}
+          {distance && (
+            <View style={styles.distanceBadge}>
+              <Ionicons
+                name="location"
+                size={getFontSize(10)}
+                color="#FFFFFF"
+              />
+              <Text style={styles.distanceText}>
+                {distance} {t("common.km")}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* ✅ Content مضغوط */}
@@ -379,16 +440,34 @@ export const CarCard: React.FC<CarCardProps> = ({
           <View style={styles.pricingContainer}>
             <View style={styles.priceRow}>
               <Text style={styles.currentPrice}>{discountedPrice}</Text>
-              <Text style={styles.currency}>{t("common.sar")}</Text>
+              <Image
+                source={icons.riyalsymbol}
+                resizeMode="contain"
+                style={{
+                  width: getFontSize(14),
+                  height: getFontSize(14),
+                  tintColor: colors.primary,
+                }}
+              />
             </View>
+
+            <View style={{flexDirection:'row', alignItems:'center', justifyContent: activeLanguage === "ar" ? "flex-end" : "flex-start" , gap:getSpacing(2)}}>
+
 
             <Text style={styles.perDayText}>{t("common.perday")}</Text>
 
             {(car.discount ?? 0) > 0 && (
               <View style={styles.originalPriceRow}>
-                <Text style={styles.originalPrice}>
-                  {car.price.daily} {t("common.sar")}
-                </Text>
+                <Text style={styles.originalPrice}>{car.price.daily}</Text>
+                <Image
+                  source={icons.riyalsymbol}
+                  resizeMode="contain"
+                  style={{
+                    width: getFontSize(10),
+                    height: getFontSize(10),
+                    tintColor: colors.textSecondary,
+                  }}
+                />
                 <Text style={styles.discountBadge}>
                   {activeLanguage === "ar"
                     ? `وفّر ${savedAmount}`
@@ -396,6 +475,8 @@ export const CarCard: React.FC<CarCardProps> = ({
                 </Text>
               </View>
             )}
+                        </View>
+
           </View>
 
           {/* ✅ Button مع status indicator */}

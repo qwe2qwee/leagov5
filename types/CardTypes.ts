@@ -33,7 +33,10 @@ export interface Car {
   branch: {
     location_ar: string;
     location_en: string;
+    latitude?: number;
+    longitude?: number;
   };
+  distance_km?: number;
 }
 
 export interface CarCardProps {

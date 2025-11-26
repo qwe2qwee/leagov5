@@ -38,6 +38,8 @@ export const transformCarData = (car: any) => ({
     location_ar:
       car.branch_location_ar || car.branch_location || car.branch_location_en,
     location_en: car.branch_location_en || car.branch_location,
+    latitude: car.branch_latitude || car.latitude,
+    longitude: car.branch_longitude || car.longitude,
   },
   distance_km: car.distance_km,
 });
