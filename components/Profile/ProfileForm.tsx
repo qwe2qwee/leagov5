@@ -6,7 +6,7 @@ import { useResponsive } from "@/hooks/useResponsive";
 import { useTheme } from "@/hooks/useTheme";
 import useLanguageStore from "@/store/useLanguageStore";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useMemo } from "react";
 import { Text, View } from "react-native";
 import FormInput from "./FormInput";
 
@@ -56,7 +56,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
   const { colors } = useTheme();
   const responsive = useResponsive();
   const fonts = useFontFamily();
-  const { isRTL } = useLanguageStore();
+  const { isRTL, currentLanguage } = useLanguageStore();
 
   const genderLabels = {
     male: t.male,
@@ -69,6 +69,39 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
     onAgeInputChange(numericText);
   };
 
+  // Validation states
+  const nameValidation = useMemo(() => {
+    if (!profile.full_name) return "default";
+    if (profile.full_name.length < 3) return "error";
+    return "success";
+  }, [profile.full_name]);
+
+  const ageValidation = useMemo(() => {
+    if (!ageInput) return "default";
+    const age = parseInt(ageInput);
+    if (age < 18 || age > 100) return "error";
+    return "success";
+  }, [ageInput]);
+
+  // Helper texts with validation
+  const nameHelperText = useMemo(() => {
+    if (nameValidation === "error") {
+      return currentLanguage === "ar"
+        ? "الاسم يجب أن يكون 3 أحرف على الأقل"
+        : "Name must be at least 3 characters";
+    }
+    return "";
+  }, [nameValidation, currentLanguage]);
+
+  const ageHelperText = useMemo(() => {
+    if (ageValidation === "error") {
+      return currentLanguage === "ar"
+        ? "العمر يجب أن يكون بين 18 و 100"
+        : "Age must be between 18 and 100";
+    }
+    return "";
+  }, [ageValidation, currentLanguage]);
+
   return (
     <Card type="default">
       <Card.Header>
@@ -78,7 +111,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
       </Card.Header>
 
       <Card.Content>
-        {/* Full Name */}
+        {/* Full Name with icon and validation */}
         <FormInput
           label={t.fullName}
           value={profile.full_name}
@@ -86,9 +119,19 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
             onProfileChange({ ...profile, full_name: text })
           }
           required={true}
+          icon="person"
+          maxLength={50}
+          showCharCounter={true}
+          validationState={nameValidation as "default" | "success" | "error"}
+          helperText={nameHelperText}
+          placeholder={
+            currentLanguage === "ar"
+              ? "أدخل اسمك الكامل"
+              : "Enter your full name"
+          }
         />
 
-        {/* Email */}
+        {/* Email with icon - disabled */}
         <FormInput
           label={t.email}
           value={profile.email}
@@ -96,9 +139,10 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
           disabled={true}
           keyboardType="email-address"
           helperText={t.cannotEdit}
+          icon="mail"
         />
 
-        {/* Phone */}
+        {/* Phone with icon - disabled */}
         <FormInput
           label={t.phone}
           value={profile.phone}
@@ -106,9 +150,10 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
           disabled={true}
           keyboardType="phone-pad"
           helperText={t.cannotEdit}
+          icon="call"
         />
 
-        {/* Age */}
+        {/* Age with icon and validation */}
         <FormInput
           label={t.age}
           value={ageInput}
@@ -116,25 +161,62 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
           onSubmitEditing={onAgeSubmit}
           placeholder={t.agePlaceholder}
           keyboardType="numeric"
+          icon="calendar"
+          maxLength={3}
+          validationState={ageValidation as "default" | "success" | "error"}
+          helperText={ageHelperText}
         />
 
-        {/* Gender */}
+        {/* Gender with improved styling */}
         <View
           style={{
             marginBottom: responsive.getResponsiveValue(20, 24, 28, 32, 36),
           }}
         >
-          <Text
+          {/* Label with icon */}
+          <View
             style={{
-              fontSize: responsive.getFontSize(15, 14, 17),
-              fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
-              color: colors.text,
-              marginBottom: responsive.getResponsiveValue(6, 8, 10, 12, 14),
-              textAlign: isRTL ? "right" : "left",
+              flexDirection: isRTL ? "row-reverse" : "row",
+              alignItems: "center",
+              marginBottom: responsive.getResponsiveValue(8, 10, 12, 14, 16),
             }}
           >
-            {t.gender}
-          </Text>
+            <Ionicons
+              name="male-female"
+              size={responsive.getResponsiveValue(18, 20, 22, 24, 26)}
+              color={colors.textSecondary}
+              style={{
+                marginRight: isRTL ? 0 : 8,
+                marginLeft: isRTL ? 8 : 0,
+              }}
+            />
+            <Text
+              style={{
+                fontSize: responsive.getFontSize(15, 14, 17),
+                fontFamily: fonts.SemiBold || fonts.Medium || fonts.Regular,
+                color: colors.text,
+                textAlign: isRTL ? "right" : "left",
+              }}
+            >
+              {t.gender}
+            </Text>
+
+            {/* Success indicator for gender */}
+            {profile.gender && (
+              <View
+                style={{
+                  marginLeft: isRTL ? 0 : 8,
+                  marginRight: isRTL ? 8 : 0,
+                }}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={responsive.getResponsiveValue(16, 18, 20, 22, 24)}
+                  color={colors.success}
+                />
+              </View>
+            )}
+          </View>
 
           <Select
             value={profile.gender || ""}
@@ -173,10 +255,14 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
           bgVariant="primary"
           onPress={onSave}
           loading={saving}
-          disabled={saving}
+          disabled={
+            saving ||
+            nameValidation === "error" ||
+            (ageInput !== "" && ageValidation === "error")
+          }
           IconLeft={() => (
             <Ionicons
-              name="checkmark-circle"
+              name={saving ? "sync" : "checkmark-circle"}
               size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
               color={colors.textInverse}
             />
@@ -188,3 +274,4 @@ const ProfileForm: React.FC<ProfileFormProps> = ({
 };
 
 export default ProfileForm;
+

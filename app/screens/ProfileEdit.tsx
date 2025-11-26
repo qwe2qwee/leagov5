@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import useLanguageStore from "@/store/useLanguageStore";
 import { useToast } from "@/store/useToastStore";
 import { useSafeNavigate } from "@/utils/useSafeNavigate";
+import * as Haptics from "expo-haptics";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
@@ -153,6 +154,11 @@ const ProfileScreen = () => {
   const handleSave = async () => {
     if (!profile) return;
 
+    // Haptic feedback on button press
+    if (Platform.OS === "ios") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
     // sync ageInput -> profile.age
     profile.age = ageInput !== "" ? parseInt(ageInput, 10) : null;
 
@@ -175,10 +181,23 @@ const ProfileScreen = () => {
 
       if (authError) throw authError;
 
+      // Success haptic feedback
+      if (Platform.OS === "ios") {
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success
+        );
+      }
+
       showSuccess(t.saveSuccess);
       Keyboard.dismiss();
     } catch (error) {
       console.error("Error updating profile:", error);
+      
+      // Error haptic feedback
+      if (Platform.OS === "ios") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      
       showError(t.saveError);
     } finally {
       setSaving(false);
