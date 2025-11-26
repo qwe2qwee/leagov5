@@ -211,17 +211,24 @@ const DocumentUploadScreen: React.FC = () => {
   const selectDocument = async (
     documentType: "national_id" | "driving_license"
   ) => {
-    // Check if document is already approved or pending
+    // Check if document is already approved or pending (rejected documents can be replaced)
     const existingDoc = getExistingDocument(documentType);
-    if (
-      existingDoc?.status === "approved" ||
-      existingDoc?.status === "pending"
-    ) {
+    if (existingDoc?.status === "approved") {
       Alert.alert(
         t.error,
         currentLanguage === "ar"
-          ? "لا يمكن تعديل الوثيقة وهي قيد المراجعة أو معتمدة"
-          : "Cannot modify document while under review or approved"
+          ? "لا يمكن تعديل الوثيقة المعتمدة"
+          : "Cannot modify approved document"
+      );
+      return;
+    }
+    
+    if (existingDoc?.status === "pending") {
+      Alert.alert(
+        t.error,
+        currentLanguage === "ar"
+          ? "لا يمكن تعديل الوثيقة وهي قيد المراجعة"
+          : "Cannot modify document while under review"
       );
       return;
     }
@@ -411,26 +418,38 @@ const DocumentUploadScreen: React.FC = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              // Delete from storage
-              const { error: storageError } = await supabase.storage
-                .from("documents")
-                .remove([document.document_url]);
-
-              if (storageError)
-                console.warn("Storage delete error:", storageError);
-
-              // Delete from database
+              // Delete from database first
               const { error: dbError } = await supabase
                 .from("documents")
                 .delete()
                 .eq("id", document.id);
-              if (dbError) throw dbError;
+              
+              if (dbError) {
+                console.error("Database delete error:", dbError);
+                throw new Error("Failed to delete document from database");
+              }
+
+              // Delete from storage (after database deletion succeeds)
+              const { error: storageError } = await supabase.storage
+                .from("documents")
+                .remove([document.document_url]);
+
+              if (storageError) {
+                console.warn("Storage delete error:", storageError);
+                // Continue even if storage delete fails - database record is already deleted
+              }
+
               // Reload documents
               await loadDocuments();
               Alert.alert(t.successTitle, t.deleteSuccess);
             } catch (error) {
               console.error("Delete error:", error);
-              Alert.alert(t.error, "Failed to delete document");
+              Alert.alert(
+                t.error,
+                currentLanguage === "ar"
+                  ? "فشل حذف الوثيقة"
+                  : "Failed to delete document"
+              );
             }
           },
         },
@@ -508,7 +527,7 @@ const DocumentUploadScreen: React.FC = () => {
           onSelectDocument={selectDocument}
           onUpload={uploadDocuments}
           uploading={uploading}
-          approvedDocuments={{
+          lockedDocuments={{
             national_id:
               getExistingDocument("national_id")?.status === "approved" ||
               getExistingDocument("national_id")?.status === "pending",

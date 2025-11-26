@@ -1,6 +1,6 @@
 import { useResponsive } from "@/hooks/useResponsive";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import DocumentCard from "./DocumentCard";
 import DocumentEmptyState from "./DocumentEmptyState";
 
@@ -57,7 +57,6 @@ const DocumentList: React.FC<DocumentListProps> = ({
 
   return (
     <View style={styles.documentsSection}>
-      <Text style={styles.sectionTitle}>{translations.myDocuments}</Text>
       {documents.length === 0 ? (
         <DocumentEmptyState message={translations.noDocuments} />
       ) : (

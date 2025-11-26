@@ -23,7 +23,7 @@ interface DocumentUploadButtonProps {
   onSelectDocument: (type: "national_id" | "driving_license") => void;
   onUpload: () => void;
   uploading: boolean;
-  approvedDocuments?: {
+  lockedDocuments?: {
     national_id?: boolean;
     driving_license?: boolean;
   };
@@ -41,7 +41,7 @@ const DocumentUploadButton: React.FC<DocumentUploadButtonProps> = ({
   onSelectDocument,
   onUpload,
   uploading,
-  approvedDocuments,
+  lockedDocuments,
   translations,
 }) => {
   const { colors } = useTheme();
@@ -188,17 +188,17 @@ const DocumentUploadButton: React.FC<DocumentUploadButtonProps> = ({
             style={[
               styles.documentTypeButton,
               selectedFiles.national_id && styles.documentTypeButtonSelected,
-              approvedDocuments?.national_id && styles.documentTypeButtonDisabled,
+              lockedDocuments?.national_id && styles.documentTypeButtonDisabled,
             ]}
             onPress={() => onSelectDocument("national_id")}
-            disabled={uploading || approvedDocuments?.national_id}
+            disabled={uploading || lockedDocuments?.national_id}
           >
             <View style={styles.documentTypeIcon}>
               <Ionicons
-                name={approvedDocuments?.national_id ? "checkmark-circle" : "id-card-outline"}
+                name={lockedDocuments?.national_id ? "checkmark-circle" : "id-card-outline"}
                 size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
                 color={
-                  approvedDocuments?.national_id
+                  lockedDocuments?.national_id
                     ? colors.success
                     : selectedFiles.national_id
                     ? colors.primary
@@ -224,17 +224,17 @@ const DocumentUploadButton: React.FC<DocumentUploadButtonProps> = ({
               styles.documentTypeButton,
               selectedFiles.driving_license &&
                 styles.documentTypeButtonSelected,
-              approvedDocuments?.driving_license && styles.documentTypeButtonDisabled,
+              lockedDocuments?.driving_license && styles.documentTypeButtonDisabled,
             ]}
             onPress={() => onSelectDocument("driving_license")}
-            disabled={uploading || approvedDocuments?.driving_license}
+            disabled={uploading || lockedDocuments?.driving_license}
           >
             <View style={styles.documentTypeIcon}>
               <Ionicons
-                name={approvedDocuments?.driving_license ? "checkmark-circle" : "car-outline"}
+                name={lockedDocuments?.driving_license ? "checkmark-circle" : "car-outline"}
                 size={responsive.getResponsiveValue(20, 22, 24, 26, 28)}
                 color={
-                  approvedDocuments?.driving_license
+                  lockedDocuments?.driving_license
                     ? colors.success
                     : selectedFiles.driving_license
                     ? colors.primary
