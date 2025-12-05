@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Leago",
-    "slug": "leagoV5",
+    "slug": "leago",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -30,7 +30,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.qwe2qwe.leagoV5",
+      "package": "com.ahmedyunis.leago",
       "versionCode": 17,
       "permissions": [
         "android.permission.CAMERA",
@@ -100,16 +100,16 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a23a123d-b29d-41ca-8b04-e75d523b4f6b"
+        "projectId": "4699ec63-0c28-47bf-9566-036c37440565"
       },
       "EXPO_PUBLIC_SUPABASE_URL": "https://gtmqrjdqomovbkdabvqb.supabase.co",
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0bXFyamRxb21vdmJrZGFidnFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzMTcxOTIsImV4cCI6MjA3Njg5MzE5Mn0.FBtj5W24t4BjKSRsQT6Z81JaQY1CUb8DggG_I6aDmoE",
       "EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLSend": "https://gtmqrjdqomovbkdabvqb.supabase.co/functions/v1/send-otp",
       "EXPO_PUBLIC_SUPABASE_FUNCTIONS_URLVeryfiy": "https://gtmqrjdqomovbkdabvqb.supabase.co/functions/v1/verify-otp"
     },
-    "owner": "qwe2qwe",
+    "owner": "ahmed-yunis",
     "updates": {
-      "url": "https://u.expo.dev/b4cd9731-6fc4-48a2-8321-5216ef8499a6"
+      "url": "https://u.expo.dev/4699ec63-0c28-47bf-9566-036c37440565"
     }
   }
 }
