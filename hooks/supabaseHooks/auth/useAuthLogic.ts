@@ -226,7 +226,7 @@ export const useAuthLogic = () => {
           "check_is_user_deleted",
           {
             identifier: normalizedIdentifier,
-          }
+          } as any
         );
 
         if (isDeleted) {

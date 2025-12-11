@@ -1048,6 +1048,16 @@ export type Database = {
         Args: Record<string, never>;
         Returns: string | null;
       };
+      check_user_is_customer: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      check_is_user_deleted: {
+        Args: {
+          identifier: string;
+        };
+        Returns: boolean;
+      };
 
       // دوال الحجوزات
       check_car_availability: {
