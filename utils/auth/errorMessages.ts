@@ -79,6 +79,10 @@ export const getLocalizedErrorMessage = (
       ar: "فشل في تسجيل الدخول",
       en: "Login failed",
     },
+    accountDeleted: {
+      ar: "تم حذف هذا الحساب. لا يمكن تسجيل الدخول.",
+      en: "This account has been deleted. Cannot login.",
+    },
   } as const;
 
   return messages[errorType]?.[language] || "An error occurred";

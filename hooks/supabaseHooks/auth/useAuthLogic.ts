@@ -221,6 +221,18 @@ export const useAuthLogic = () => {
           normalizedIdentifier = identifier.toLowerCase();
         }
 
+        // Check if user is deleted (RPC)
+        const { data: isDeleted, error: rpcError } = await supabase.rpc(
+          "check_is_user_deleted",
+          {
+            identifier: normalizedIdentifier,
+          }
+        );
+
+        if (isDeleted) {
+          return { error: getLocalizedErrorMessage("accountDeleted", lang) };
+        }
+
         const exists =
           method === "phone"
             ? await checkPhoneExists(normalizedIdentifier)
